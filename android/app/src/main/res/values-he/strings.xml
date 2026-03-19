@@ -827,4 +827,6 @@
     <!-- Privacy &amp; Ads consent -->
     <string name="privacy_ads_title">פרטיות ומודעות</string>
     <string name="privacy_ads_subtitle">נהל את התאמה אישית של מודעות ובחירות הסכמה</string>
+    <string name="export">ייצוא</string>
 </resources>
+

@@ -828,4 +828,6 @@
     <!-- Privacy &amp; Ads consent -->
     <string name="privacy_ads_title">حریم خصوصی و تبلیغات</string>
     <string name="privacy_ads_subtitle">مدیریت شخصی‌سازی تبلیغات و انتخاب‌های رضایت</string>
+    <string name="export">صادر کردن</string>
 </resources>
+

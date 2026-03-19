@@ -781,4 +781,6 @@
     <!-- Privacy &amp; Ads consent -->
     <string name="privacy_ads_title">Privacidade e anúncios</string>
     <string name="privacy_ads_subtitle">Gerencie a personalização de anúncios e suas escolhas de consentimento</string>
+    <string name="export">Exportar</string>
 </resources>
+

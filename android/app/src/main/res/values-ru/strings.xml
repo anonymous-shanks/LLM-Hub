@@ -800,4 +800,6 @@
     <!-- Privacy &amp; Ads consent -->
     <string name="privacy_ads_title">Конфиденциальность и реклама</string>
     <string name="privacy_ads_subtitle">Управление персонализацией рекламы и согласиями</string>
+    <string name="export">Экспорт</string>
 </resources>
+

@@ -828,4 +828,6 @@
     <!-- Privacy &amp; Ads consent -->
     <string name="privacy_ads_title">개인정보 및 광고</string>
     <string name="privacy_ads_subtitle">광고 개인화 및 동의 선택 관리</string>
+    <string name="export">내보내기</string>
 </resources>
+

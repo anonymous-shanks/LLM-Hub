@@ -827,4 +827,6 @@
     <!-- Privacy &amp; Ads consent -->
     <string name="privacy_ads_title">الخصوصية والإعلانات</string>
     <string name="privacy_ads_subtitle">إدارة تخصيص الإعلانات وخيارات الموافقة</string>
+    <string name="export">تصدير</string>
 </resources>
+

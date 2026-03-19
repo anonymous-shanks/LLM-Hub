@@ -49,6 +49,13 @@ import com.llmhub.llmhub.LlmHubApplication
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
+import com.llmhub.llmhub.data.localFileName
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 import android.view.WindowManager
 import androidx.compose.runtime.DisposableEffect
@@ -433,6 +440,91 @@ private fun ModelVariantItem(
     onResume: (LLMModel) -> Unit,
     onDelete: (LLMModel) -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+    var exportError by remember { mutableStateOf<String?>(null) }
+    var pendingExportFile by remember { mutableStateOf<File?>(null) }
+    var pendingTempZip by remember { mutableStateOf<File?>(null) }
+
+    fun cleanupPendingTempZip() {
+        pendingTempZip?.let { runCatching { it.delete() } }
+        pendingTempZip = null
+    }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { targetUri: Uri? ->
+        val source = pendingExportFile
+        if (targetUri == null || source == null) {
+            cleanupPendingTempZip()
+            pendingExportFile = null
+            return@rememberLauncherForActivityResult
+        }
+
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(targetUri)?.use { output ->
+                        FileInputStream(source).use { input ->
+                            input.copyTo(output)
+                        }
+                    } ?: error("Cannot open export destination")
+                }
+            } catch (e: Exception) {
+                exportError = e.message ?: "Export failed"
+            } finally {
+                cleanupPendingTempZip()
+                pendingExportFile = null
+            }
+        }
+    }
+
+    fun startExport() {
+        val files = resolveLocalModelFiles(model, context)
+        if (files.isEmpty()) {
+            exportError = "No local files found for this model"
+            return
+        }
+
+        if (files.size == 1) {
+            cleanupPendingTempZip()
+            pendingExportFile = files.first()
+            exportLauncher.launch(files.first().name)
+            return
+        }
+
+        scope.launch {
+            try {
+                val zipFile = withContext(Dispatchers.IO) {
+                    createModelExportZip(
+                        cacheDir = context.cacheDir,
+                        modelName = model.name,
+                        files = files
+                    )
+                }
+                pendingTempZip = zipFile
+                pendingExportFile = zipFile
+                exportLauncher.launch(zipFile.name)
+            } catch (e: Exception) {
+                exportError = e.message ?: "Export failed"
+                cleanupPendingTempZip()
+                pendingExportFile = null
+            }
+        }
+    }
+
+    exportError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { exportError = null },
+            title = { Text(stringResource(R.string.error)) },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { exportError = null }) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            }
+        )
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -608,40 +700,52 @@ private fun ModelVariantItem(
             ) {
                 when {
                     model.isDownloaded && model.source == "Custom" -> {
-                        // Imported models - show Remove button
-                        OutlinedButton(
-                            onClick = { onDelete(model) },
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
-                            ),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
-                        ) {
-                            Icon(
-                                Icons.Default.Remove,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(stringResource(R.string.remove))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { startExport() }) {
+                                Icon(Icons.Default.IosShare, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.export))
+                            }
+                            OutlinedButton(
+                                onClick = { onDelete(model) },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                            ) {
+                                Icon(
+                                    Icons.Default.Remove,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.remove))
+                            }
                         }
                     }
                     
                     model.isDownloaded -> {
-                        // Downloaded models - show Delete button
-                        OutlinedButton(
-                            onClick = { onDelete(model) },
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
-                            ),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(stringResource(R.string.delete))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { startExport() }) {
+                                Icon(Icons.Default.IosShare, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.export))
+                            }
+                            OutlinedButton(
+                                onClick = { onDelete(model) },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.delete))
+                            }
                         }
                     }
                     
@@ -754,6 +858,98 @@ private fun ModelVariantItem(
             }
         }
     }
+}
+
+private fun resolveLocalModelFiles(model: LLMModel, context: Context): List<File> {
+    val files = mutableListOf<File>()
+    val modelsDir = File(context.filesDir, "models")
+    val sdModelsDir = File(context.filesDir, "sd_models")
+
+    when (model.modelFormat.lowercase()) {
+        "qnn_npu", "mnn_cpu" -> {
+            val modelDir = File(sdModelsDir, model.name.replace(" ", "_"))
+            if (modelDir.exists() && modelDir.isDirectory) {
+                files += modelDir.walkTopDown().filter { it.isFile }.toList()
+            }
+        }
+
+        "image_generator" -> {
+            val binsDir = File(context.filesDir, "image_generator/bins")
+            if (binsDir.exists() && binsDir.isDirectory) {
+                files += binsDir.listFiles()?.filter { it.isFile } ?: emptyList()
+            }
+        }
+
+        "onnx" -> {
+            if (model.additionalFiles.isNotEmpty()) {
+                val modelDirName = model.name.replace(" ", "_").replace(Regex("[^a-zA-Z0-9_.-]"), "")
+                val modelDir = File(modelsDir, modelDirName)
+                if (modelDir.exists() && modelDir.isDirectory) {
+                    files += modelDir.listFiles()?.filter { it.isFile } ?: emptyList()
+                }
+            }
+
+            if (files.isEmpty()) {
+                val primary = File(modelsDir, model.localFileName())
+                if (primary.exists()) files += primary
+            }
+        }
+
+        "gguf" -> {
+            if (model.additionalFiles.isNotEmpty()) {
+                val modelDirName = model.name.replace(" ", "_").replace(Regex("[^a-zA-Z0-9_.-]"), "")
+                val modelDir = File(modelsDir, modelDirName)
+                if (modelDir.exists() && modelDir.isDirectory) {
+                    files += modelDir.listFiles()?.filter { it.isFile } ?: emptyList()
+                }
+            }
+
+            if (files.isEmpty()) {
+                val primary = File(modelsDir, model.localFileName())
+                if (primary.exists()) files += primary
+
+                val legacy = File(modelsDir, "${model.name.replace(" ", "_")}.gguf")
+                if (legacy.exists()) files += legacy
+            }
+        }
+
+        else -> {
+            val primary = File(modelsDir, model.localFileName())
+            if (primary.exists()) files += primary
+        }
+    }
+
+    if (model.source == "Custom") {
+        runCatching {
+            val uri = Uri.parse(model.url)
+            if (uri.scheme == "file") {
+                val customFile = File(requireNotNull(uri.path))
+                if (customFile.exists()) files += customFile
+            }
+        }
+    }
+
+    return files
+        .distinctBy { it.absolutePath }
+        .filter { it.exists() && it.isFile }
+        .sortedBy { it.name.lowercase() }
+}
+
+private fun createModelExportZip(cacheDir: File, modelName: String, files: List<File>): File {
+    val safeModel = modelName.replace(Regex("[^a-zA-Z0-9_.-]"), "_")
+    val zipFile = File(cacheDir, "${safeModel}_${System.currentTimeMillis()}.zip")
+
+    ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
+        files.forEach { file ->
+            zos.putNextEntry(ZipEntry(file.name))
+            FileInputStream(file).use { input ->
+                input.copyTo(zos)
+            }
+            zos.closeEntry()
+        }
+    }
+
+    return zipFile
 }
 
 private fun formatFileSize(bytes: Long): String {

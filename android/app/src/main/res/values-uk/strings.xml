@@ -828,4 +828,6 @@
     <!-- Privacy &amp; Ads consent -->
     <string name="privacy_ads_title">Конфіденційність і реклама</string>
     <string name="privacy_ads_subtitle">Керуйте персоналізацією реклами та вибором згоди</string>
+    <string name="export">Експорт</string>
 </resources>
+

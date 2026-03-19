@@ -830,4 +830,6 @@
     <!-- Privacy &amp; Ads consent -->
     <string name="privacy_ads_title">Privasi &amp; Iklan</string>
     <string name="privacy_ads_subtitle">Kelola personalisasi iklan dan pilihan persetujuan Anda</string>
+    <string name="export">Ekspor</string>
 </resources>
+

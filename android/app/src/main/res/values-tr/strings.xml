@@ -825,4 +825,6 @@
     <string name="premium_go_premium">Premium’a Geç</string>
     <!-- Privacy &amp; Ads consent -->
     <string name="privacy_ads_title">Gizlilik ve Reklamlar</string>
-    <string name="privacy_ads_subtitle">Reklam kişiselleştirme ve onay tercihlerini yönetin</string></resources>
+    <string name="privacy_ads_subtitle">Reklam kişiselleştirme ve onay tercihlerini yönetin</string>    <string name="export">Dışa aktar</string>
+</resources>
+

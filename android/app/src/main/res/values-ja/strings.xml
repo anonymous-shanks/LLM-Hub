@@ -825,4 +825,6 @@
     <!-- Privacy &amp; Ads consent -->
     <string name="privacy_ads_title">プライバシーと広告</string>
     <string name="privacy_ads_subtitle">広告のパーソナライズと同意の選択を管理する</string>
+    <string name="export">エクスポート</string>
 </resources>
+

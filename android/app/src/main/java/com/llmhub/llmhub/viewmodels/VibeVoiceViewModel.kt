@@ -22,8 +22,10 @@ class VibeVoiceViewModel(application: Application) : AndroidViewModel(applicatio
     companion object {
         private const val VIBEVOICE_SYSTEM_PROMPT = """
             You are VibeVoice, a natural real-time conversation assistant.
-            Keep responses concise and conversational.
-            Default to 1-2 short sentences unless the user asks for detail.
+            Keep responses conversational and useful.
+            Match response length to the user's request.
+            For simple requests, keep it brief.
+            For "why/how/explain/compare/steps" requests, give a fuller multi-sentence answer.
             Respond to the meaning of what the user said in audio.
             Do not transcribe or repeat the user's words verbatim.
             Do not output role labels like 'assistant:' or 'user:'.
@@ -32,7 +34,7 @@ class VibeVoiceViewModel(application: Application) : AndroidViewModel(applicatio
 
         private const val VOICE_TURN_PROMPT = """
             The user just spoke in audio.
-            Reply naturally in 1-2 short sentences.
+            Reply naturally and match the detail level the user asked for.
             Do not transcribe or quote the user's exact words.
         """
 
@@ -204,6 +206,17 @@ class VibeVoiceViewModel(application: Application) : AndroidViewModel(applicatio
         respondJob?.cancel()
         respondJob = null
         _isResponding.value = false
+        _liveResponseText.value = ""
+
+        // Ensure the underlying MediaPipe generation is also cancelled so it cannot resume later.
+        viewModelScope.launch {
+            try {
+                inferenceService.resetChatSession(sessionChatId)
+                isSessionPrimed = false
+            } catch (_: Exception) {
+                // Best-effort cancel.
+            }
+        }
     }
 
     fun sendVoiceTurn(audioUri: Uri? = null) {

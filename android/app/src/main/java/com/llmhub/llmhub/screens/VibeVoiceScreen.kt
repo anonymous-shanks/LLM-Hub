@@ -249,7 +249,14 @@ fun VibeVoiceScreen(
 
     var streamedTtsIndex by remember { mutableStateOf(0) }
     var lastCompletedReply by remember { mutableStateOf("") }
-    LaunchedEffect(latestAssistantText, isResponding) {
+    LaunchedEffect(latestAssistantText, isResponding, isChatActive) {
+        if (!isChatActive) {
+            // Hard stop when chat is manually inactive to block delayed TTS callbacks.
+            ttsService.stop()
+            streamedTtsIndex = latestAssistantText.length
+            return@LaunchedEffect
+        }
+
         if (isResponding) {
             if (latestAssistantText.length < streamedTtsIndex) {
                 streamedTtsIndex = 0
@@ -430,12 +437,10 @@ fun VibeVoiceScreen(
                                             isManualStopping = true
                                             viewModel.setRecording(false)
                                         }
-                                        if (isResponding) {
-                                            viewModel.cancelResponse()
-                                        }
-                                        if (isTtsSpeaking) {
-                                            ttsService.stop()
-                                        }
+                                        viewModel.cancelResponse()
+                                        ttsService.stop()
+                                        recordedAudioData = null
+                                        viewModel.clearCurrentAudioInput()
                                     }
                                 },
                             contentAlignment = Alignment.Center

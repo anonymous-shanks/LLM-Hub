@@ -23,6 +23,7 @@ import java.io.OutputStream
 class ImageGeneratorHelper(private val context: Context) {
     private val TAG = "ImageGeneratorHelper"
     private val sdHelper = StableDiffusionHelper(context)
+    private var currentModelType: ModelType? = null
     
     suspend fun initialize(modelPath: String? = null, useGpu: Boolean = false): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -43,6 +44,8 @@ class ImageGeneratorHelper(private val context: Context) {
                 Log.e(TAG, "No SD model found. Please download a model first.")
                 return@withContext false
             }
+
+            currentModelType = modelInfo.type
             
             Log.i(TAG, "Found model: ${modelInfo.name} (${modelInfo.type})")
             
@@ -90,7 +93,15 @@ class ImageGeneratorHelper(private val context: Context) {
     ): Bitmap? = withContext(Dispatchers.IO) {
         try {
             val img2imgInfo = if (inputImage != null) " [img2img, denoise: $denoiseStrength]" else ""
-            Log.i(TAG, "Generating image: prompt='$prompt', steps=$iterations, seed=$seed$img2imgInfo")
+            val (targetWidth, targetHeight) = when (currentModelType) {
+                ModelType.MNN_CPU -> 256 to 256
+                else -> 512 to 512
+            }
+
+            Log.i(
+                TAG,
+                "Generating image: prompt='$prompt', steps=$iterations, seed=$seed, size=${targetWidth}x${targetHeight}$img2imgInfo"
+            )
             
             val bitmap = sdHelper.generateImage(
                 prompt = prompt,
@@ -98,6 +109,8 @@ class ImageGeneratorHelper(private val context: Context) {
                 seed = if (seed == 0) null else seed.toLong(),
                 inputImage = inputImage,
                 denoiseStrength = denoiseStrength,
+                width = targetWidth,
+                height = targetHeight,
                 useOpenCL = useGpu,
                 onProgress = { current, total ->
                     Log.d(TAG, "Generation progress: $current/$total")
@@ -163,6 +176,7 @@ class ImageGeneratorHelper(private val context: Context) {
     fun close() {
         try {
             SDBackendService.stop(context)
+            currentModelType = null
             Log.i(TAG, "ImageGenerator closed")
         } catch (e: Exception) {
             Log.e(TAG, "Error closing ImageGenerator: ${e.message}", e)

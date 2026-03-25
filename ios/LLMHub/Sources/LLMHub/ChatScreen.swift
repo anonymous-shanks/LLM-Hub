@@ -7,29 +7,146 @@ import UniformTypeIdentifiers
 import ImageIO
 #endif
 
+private func persistentAttachmentDirectoryURL() -> URL {
+    let fileManager = FileManager.default
+    let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        ?? fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
+        ?? fileManager.temporaryDirectory
+    let dir = base.appendingPathComponent("LLMHubAttachments", isDirectory: true)
+    try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir
+}
+
+private func resolveStoredAttachmentURL(_ storedPath: String?) -> URL? {
+    guard var raw = storedPath?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+        return nil
+    }
+
+    if raw.hasPrefix("Optional(\"") && raw.hasSuffix("\")") {
+        raw = String(raw.dropFirst("Optional(\"".count).dropLast(2))
+    }
+
+    let fm = FileManager.default
+    var candidates: [URL] = []
+
+    if let url = URL(string: raw), url.isFileURL {
+        candidates.append(url)
+    }
+
+    candidates.append(URL(fileURLWithPath: raw))
+
+    for candidate in candidates where fm.fileExists(atPath: candidate.path) {
+        return candidate
+    }
+
+    let fallbackName = (candidates.last ?? URL(fileURLWithPath: raw)).lastPathComponent
+    guard !fallbackName.isEmpty else { return nil }
+
+    let fallbackDirs = [
+        persistentAttachmentDirectoryURL(),
+        fm.temporaryDirectory.appendingPathComponent("llmhub_attachments", isDirectory: true),
+    ]
+
+    for dir in fallbackDirs {
+        let candidate = dir.appendingPathComponent(fallbackName)
+        if fm.fileExists(atPath: candidate.path) {
+            return candidate
+        }
+    }
+
+    return nil
+}
+
 // MARK: - Chat ViewModel
 @MainActor
 class ChatViewModel: ObservableObject {
+    private struct ModelGenerationSettings: Codable {
+        var maxTokens: Double
+        var contextWindow: Double
+        var topK: Double
+        var topP: Double
+        var temperature: Double
+        var selectedBackend: String
+        var enableVision: Bool
+        var enableAudio: Bool
+        var enableThinking: Bool
+    }
+
+    private enum PersistenceKeys {
+        static let selectedModelName = "chat_selected_model_name"
+        static let perModelSettings = "chat_model_generation_settings_v1"
+
+        // Legacy global settings keys for migration defaults.
+        static let maxTokens = "chat_max_tokens"
+        static let contextWindow = "chat_context_window"
+        static let topK = "chat_top_k"
+        static let topP = "chat_top_p"
+        static let temperature = "chat_temperature"
+        static let selectedBackend = "chat_selected_backend"
+        static let enableVision = "chat_enable_vision"
+        static let enableAudio = "chat_enable_audio"
+        static let enableThinking = "chat_enable_thinking"
+    }
+
+    private static let defaultGenerationSettings = ModelGenerationSettings(
+        maxTokens: 512,
+        contextWindow: 2048,
+        topK: 64,
+        topP: 0.95,
+        temperature: 1.0,
+        selectedBackend: "GPU",
+        enableVision: true,
+        enableAudio: true,
+        enableThinking: true
+    )
+
     @Published var inputText: String = ""
     @Published var isGenerating: Bool = false
     @Published var tokensPerSecond: Double = 0
     @Published var totalTokens: Int = 0
-    @Published var selectedModelName: String = AppSettings.shared.localized("no_model_selected")
+    @Published var selectedModelName: String = AppSettings.shared.localized("no_model_selected") {
+        didSet {
+            guard selectedModelName != oldValue else { return }
+            userDefaults.set(selectedModelName, forKey: PersistenceKeys.selectedModelName)
+            loadSettingsForSelectedModel()
+        }
+    }
     @Published var isBackendLoading: Bool = false
     
-    // Config Properties (Persisted)
-    @AppStorage("chat_max_tokens") var maxTokens: Double = 512
-    @AppStorage("chat_context_window") var contextWindow: Double = 2048
-    @AppStorage("chat_top_k") var topK: Double = 64
-    @AppStorage("chat_top_p") var topP: Double = 0.95
-    @AppStorage("chat_temperature") var temperature: Double = 1.0
-    @AppStorage("chat_selected_backend") var selectedBackend: String = "GPU"
-    @AppStorage("chat_enable_vision") var enableVision: Bool = true
-    @AppStorage("chat_enable_audio") var enableAudio: Bool = true
-    @AppStorage("chat_enable_thinking") var enableThinking: Bool = true
+    // Config Properties (Persisted per model)
+    @Published var maxTokens: Double = ChatViewModel.defaultGenerationSettings.maxTokens {
+        didSet { persistCurrentModelSettingsIfNeeded() }
+    }
+    @Published var contextWindow: Double = ChatViewModel.defaultGenerationSettings.contextWindow {
+        didSet { persistCurrentModelSettingsIfNeeded() }
+    }
+    @Published var topK: Double = ChatViewModel.defaultGenerationSettings.topK {
+        didSet { persistCurrentModelSettingsIfNeeded() }
+    }
+    @Published var topP: Double = ChatViewModel.defaultGenerationSettings.topP {
+        didSet { persistCurrentModelSettingsIfNeeded() }
+    }
+    @Published var temperature: Double = ChatViewModel.defaultGenerationSettings.temperature {
+        didSet { persistCurrentModelSettingsIfNeeded() }
+    }
+    @Published var selectedBackend: String = ChatViewModel.defaultGenerationSettings.selectedBackend {
+        didSet { persistCurrentModelSettingsIfNeeded() }
+    }
+    @Published var enableVision: Bool = ChatViewModel.defaultGenerationSettings.enableVision {
+        didSet { persistCurrentModelSettingsIfNeeded() }
+    }
+    @Published var enableAudio: Bool = ChatViewModel.defaultGenerationSettings.enableAudio {
+        didSet { persistCurrentModelSettingsIfNeeded() }
+    }
+    @Published var enableThinking: Bool = ChatViewModel.defaultGenerationSettings.enableThinking {
+        didSet { persistCurrentModelSettingsIfNeeded() }
+    }
 
     private let chatStore = ChatStore.shared
     private let llmBackend = LLMBackend.shared
+    private let userDefaults = UserDefaults.standard
+    private var settingsByModelId: [String: ModelGenerationSettings] = [:]
+    private var isApplyingPersistedSettings = false
     @Published var currentSessionId: UUID = UUID()
     private var activeGeneratingMessageId: UUID?
     
@@ -78,6 +195,15 @@ class ChatViewModel: ObservableObject {
             _ = await RunAnywhere.discoverDownloadedModels()
         }
 
+        settingsByModelId = Self.loadPerModelSettings(from: userDefaults)
+
+        if let savedModelName = userDefaults.string(forKey: PersistenceKeys.selectedModelName),
+           !savedModelName.isEmpty {
+            selectedModelName = savedModelName
+        }
+
+        loadSettingsForSelectedModel()
+
         if let empty = chatStore.chatSessions.first(where: { $0.messages.isEmpty }) {
             currentSessionId = empty.id
         } else {
@@ -122,6 +248,139 @@ class ChatViewModel: ObservableObject {
         llmBackend.enableAudio = enableAudio
         llmBackend.enableThinking = enableThinking
         llmBackend.selectedBackend = selectedBackend
+    }
+
+    private var selectedModelId: String? {
+        guard selectedModelName != AppSettings.shared.localized("no_model_selected") else { return nil }
+        return ModelData.models.first(where: { $0.name == selectedModelName })?.id
+    }
+
+    private func loadSettingsForSelectedModel() {
+        let settings: ModelGenerationSettings
+
+        if let modelId = selectedModelId,
+           let persisted = settingsByModelId[modelId] {
+            settings = clampSettings(persisted, forModelName: selectedModelName)
+        } else {
+            settings = clampSettings(Self.legacyDefaults(from: userDefaults), forModelName: selectedModelName)
+        }
+
+        applySettings(settings)
+
+        // Ensure first-time model selections get persisted immediately.
+        persistCurrentModelSettingsIfNeeded(force: true)
+    }
+
+    private func applySettings(_ settings: ModelGenerationSettings) {
+        isApplyingPersistedSettings = true
+        maxTokens = settings.maxTokens
+        contextWindow = settings.contextWindow
+        topK = settings.topK
+        topP = settings.topP
+        temperature = settings.temperature
+        selectedBackend = settings.selectedBackend
+        enableVision = settings.enableVision
+        enableAudio = settings.enableAudio
+        enableThinking = settings.enableThinking
+        isApplyingPersistedSettings = false
+    }
+
+    private func currentSettingsSnapshot() -> ModelGenerationSettings {
+        ModelGenerationSettings(
+            maxTokens: maxTokens,
+            contextWindow: contextWindow,
+            topK: topK,
+            topP: topP,
+            temperature: temperature,
+            selectedBackend: selectedBackend,
+            enableVision: enableVision,
+            enableAudio: enableAudio,
+            enableThinking: enableThinking
+        )
+    }
+
+    private func persistCurrentModelSettingsIfNeeded(force: Bool = false) {
+        if isApplyingPersistedSettings && !force { return }
+        guard let modelId = selectedModelId else { return }
+
+        let normalized = clampSettings(currentSettingsSnapshot(), forModelName: selectedModelName)
+        settingsByModelId[modelId] = normalized
+
+        if !isApplyingPersistedSettings {
+            applySettings(normalized)
+        }
+
+        Self.savePerModelSettings(settingsByModelId, to: userDefaults)
+    }
+
+    private func clampSettings(_ settings: ModelGenerationSettings, forModelName modelName: String) -> ModelGenerationSettings {
+        guard let model = ModelData.models.first(where: { $0.name == modelName }) else {
+            var fallback = settings
+            fallback.contextWindow = max(1, fallback.contextWindow)
+            fallback.maxTokens = min(max(1, fallback.maxTokens), fallback.contextWindow)
+            fallback.topK = min(max(1, fallback.topK), 256)
+            fallback.topP = min(max(0, fallback.topP), 1)
+            fallback.temperature = min(max(0, fallback.temperature), 2)
+            return fallback
+        }
+
+        let modelMaxContext = Double(max(1, model.contextWindowSize > 0 ? model.contextWindowSize : 2048))
+        var clamped = settings
+        clamped.contextWindow = min(max(1, clamped.contextWindow), modelMaxContext)
+        clamped.maxTokens = min(max(1, clamped.maxTokens), clamped.contextWindow)
+        clamped.topK = min(max(1, clamped.topK), 256)
+        clamped.topP = min(max(0, clamped.topP), 1)
+        clamped.temperature = min(max(0, clamped.temperature), 2)
+        return clamped
+    }
+
+    private static func loadPerModelSettings(from defaults: UserDefaults) -> [String: ModelGenerationSettings] {
+        guard let data = defaults.data(forKey: PersistenceKeys.perModelSettings) else {
+            return [:]
+        }
+        guard let decoded = try? JSONDecoder().decode([String: ModelGenerationSettings].self, from: data) else {
+            return [:]
+        }
+        return decoded
+    }
+
+    private static func savePerModelSettings(_ settingsByModelId: [String: ModelGenerationSettings], to defaults: UserDefaults) {
+        guard let data = try? JSONEncoder().encode(settingsByModelId) else { return }
+        defaults.set(data, forKey: PersistenceKeys.perModelSettings)
+    }
+
+    private static func legacyDefaults(from defaults: UserDefaults) -> ModelGenerationSettings {
+        var settings = defaultGenerationSettings
+
+        if defaults.object(forKey: PersistenceKeys.maxTokens) != nil {
+            settings.maxTokens = defaults.double(forKey: PersistenceKeys.maxTokens)
+        }
+        if defaults.object(forKey: PersistenceKeys.contextWindow) != nil {
+            settings.contextWindow = defaults.double(forKey: PersistenceKeys.contextWindow)
+        }
+        if defaults.object(forKey: PersistenceKeys.topK) != nil {
+            settings.topK = defaults.double(forKey: PersistenceKeys.topK)
+        }
+        if defaults.object(forKey: PersistenceKeys.topP) != nil {
+            settings.topP = defaults.double(forKey: PersistenceKeys.topP)
+        }
+        if defaults.object(forKey: PersistenceKeys.temperature) != nil {
+            settings.temperature = defaults.double(forKey: PersistenceKeys.temperature)
+        }
+        if let backend = defaults.string(forKey: PersistenceKeys.selectedBackend), !backend.isEmpty {
+            settings.selectedBackend = backend
+        }
+        if defaults.object(forKey: PersistenceKeys.enableVision) != nil {
+            settings.enableVision = defaults.bool(forKey: PersistenceKeys.enableVision)
+        }
+        if defaults.object(forKey: PersistenceKeys.enableAudio) != nil {
+            settings.enableAudio = defaults.bool(forKey: PersistenceKeys.enableAudio)
+        }
+        if defaults.object(forKey: PersistenceKeys.enableThinking) != nil {
+            settings.enableThinking = defaults.bool(forKey: PersistenceKeys.enableThinking)
+        }
+
+        return settings
     }
 
     func unloadModel() {
@@ -373,9 +632,7 @@ class ChatViewModel: ObservableObject {
     private var streamingTask: Task<Void, Never>?
 
     private func existingFileURL(atPath path: String?) -> URL? {
-        guard let path,
-              FileManager.default.fileExists(atPath: path) else { return nil }
-        return URL(fileURLWithPath: path)
+        resolveStoredAttachmentURL(path)
     }
 }
 
@@ -384,6 +641,7 @@ struct MessageBubble: View {
     @EnvironmentObject var settings: AppSettings
     let message: ChatMessage
     let onCopy: () -> Void
+    let onOpenImage: ((String) -> Void)?
     let onEditUserMessage: ((String) -> Void)?
     let onEditAssistantMessage: ((String) -> Void)?
     let onRegenerateResponse: (() -> Void)?
@@ -435,6 +693,9 @@ struct MessageBubble: View {
                                     .scaledToFit()
                                     .frame(maxWidth: 220)
                                     .clipShape(RoundedRectangle(cornerRadius: 14))
+                                    .onTapGesture {
+                                        onOpenImage?(imagePath)
+                                    }
                             }
 
                             if message.attachmentAudioPath != nil {
@@ -584,11 +845,12 @@ struct MessageBubble: View {
     }
 
     private func previewImage(from path: String) -> UIImage? {
+        guard let resolvedURL = resolveStoredAttachmentURL(path) else { return nil }
+
         #if canImport(ImageIO)
-        let url = URL(fileURLWithPath: path)
         let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions) else {
-            return UIImage(contentsOfFile: path)
+        guard let source = CGImageSourceCreateWithURL(resolvedURL as CFURL, sourceOptions) else {
+            return UIImage(contentsOfFile: resolvedURL.path)
         }
 
         let thumbOptions = [
@@ -602,7 +864,7 @@ struct MessageBubble: View {
             return UIImage(cgImage: cgImage)
         }
         #endif
-        return UIImage(contentsOfFile: path)
+        return UIImage(contentsOfFile: resolvedURL.path)
     }
 }
 
@@ -905,6 +1167,7 @@ struct ChatScreen: View {
     @State private var selectedImageItem: PhotosPickerItem?
     @State private var attachedImageURL: URL?
     @State private var attachedAudioURL: URL?
+    @State private var previewImagePath: String?
     @State private var showAudioImporter = false
     @FocusState private var isComposerFocused: Bool
 
@@ -956,6 +1219,9 @@ struct ChatScreen: View {
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                                             copiedMessageId = nil
                                         }
+                                    },
+                                    onOpenImage: { imagePath in
+                                        previewImagePath = imagePath
                                     },
                                     onEditUserMessage: { updatedPrompt in
                                         if canEditUser {
@@ -1127,6 +1393,18 @@ struct ChatScreen: View {
         .sheet(isPresented: $showSettings) {
              ChatSettingsSheet(vm: vm)
         }
+        .fullScreenCover(isPresented: Binding(
+            get: { previewImagePath != nil },
+            set: { isPresented in
+                if !isPresented {
+                    previewImagePath = nil
+                }
+            }
+        )) {
+            FullScreenImagePreview(path: previewImagePath) {
+                previewImagePath = nil
+            }
+        }
         .sheet(isPresented: $showDrawer) {
             ChatDrawerPanel(
                 vm: vm,
@@ -1215,8 +1493,7 @@ struct ChatScreen: View {
     }
 
     private func writeAttachmentData(_ data: Data, preferredExtension: String) -> URL? {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("llmhub_attachments", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = attachmentStorageDirectory()
         let ext = preferredExtension.isEmpty ? "bin" : preferredExtension
         let url = dir.appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)
         do {
@@ -1228,8 +1505,7 @@ struct ChatScreen: View {
     }
 
     private func copyAttachmentToTemp(_ sourceURL: URL, preferredExtension: String) -> URL? {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("llmhub_attachments", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = attachmentStorageDirectory()
         let ext = preferredExtension.isEmpty ? sourceURL.pathExtension : preferredExtension
         let destinationURL = dir.appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)
         let didStartScopedAccess = sourceURL.startAccessingSecurityScopedResource()
@@ -1247,6 +1523,10 @@ struct ChatScreen: View {
         } catch {
             return nil
         }
+    }
+
+    private func attachmentStorageDirectory() -> URL {
+        persistentAttachmentDirectoryURL()
     }
 
     var emptyState: some View {
@@ -1316,5 +1596,52 @@ struct ChatScreen: View {
                 return FileManager.default.fileExists(atPath: fileURL.path)
             }
         }
+    }
+}
+
+private struct FullScreenImagePreview: View {
+    let path: String?
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            if let uiImage = loadImage() {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(20)
+            } else {
+                Text("Image unavailable")
+                    .foregroundColor(.white.opacity(0.9))
+                    .font(.headline)
+            }
+
+            VStack {
+                HStack {
+                    Spacer()
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 30))
+                            .foregroundColor(.white.opacity(0.95))
+                    }
+                }
+                .padding(.top, 12)
+                .padding(.horizontal, 16)
+
+                Spacer()
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onDismiss()
+        }
+    }
+
+    private func loadImage() -> UIImage? {
+        guard let resolvedURL = resolveStoredAttachmentURL(path) else { return nil }
+        return UIImage(contentsOfFile: resolvedURL.path)
     }
 }

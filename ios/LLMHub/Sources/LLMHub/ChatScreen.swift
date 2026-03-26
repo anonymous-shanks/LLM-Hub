@@ -659,8 +659,12 @@ struct MessageBubble: View {
                             TextEditor(text: $editedText)
                                 .frame(minHeight: 90)
                                 .padding(8)
-                                .background(Color(.secondarySystemBackground))
+                                .background(.ultraThinMaterial)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.white.opacity(0.16), lineWidth: 1)
+                                )
                             HStack(spacing: 8) {
                                 Button {
                                     isEditing = false
@@ -681,7 +685,7 @@ struct MessageBubble: View {
                                 .disabled(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.white.opacity(0.68))
                         }
                         .frame(maxWidth: 320)
                     } else {
@@ -706,7 +710,7 @@ struct MessageBubble: View {
                                     .padding(.vertical, 8)
                                     .background(
                                         RoundedRectangle(cornerRadius: 14)
-                                            .fill(LinearGradient(colors: [Color.indigo.opacity(0.85), Color.purple.opacity(0.85)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                            .fill(LinearGradient(colors: [Color(hex: "5e7bb2").opacity(0.92), Color(hex: "455a7d").opacity(0.94)], startPoint: .topLeading, endPoint: .bottomTrailing))
                                     )
                             }
 
@@ -718,7 +722,11 @@ struct MessageBubble: View {
                                     .padding(.vertical, 10)
                                     .background(
                                         RoundedRectangle(cornerRadius: 18)
-                                            .fill(LinearGradient(colors: [Color.indigo, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                            .fill(LinearGradient(colors: [Color(hex: "6f93cd"), Color(hex: "455c82")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 18)
+                                            .stroke(Color.white.opacity(0.16), lineWidth: 1)
                                     )
                             }
                         }
@@ -737,8 +745,12 @@ struct MessageBubble: View {
                             TextEditor(text: $editedText)
                                 .frame(minHeight: 100)
                                 .padding(8)
-                                .background(Color(.secondarySystemBackground))
+                                .background(.ultraThinMaterial)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.white.opacity(0.16), lineWidth: 1)
+                                )
                             HStack(spacing: 10) {
                                 Button {
                                     isEditing = false
@@ -759,11 +771,12 @@ struct MessageBubble: View {
                                 .disabled(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.white.opacity(0.68))
                         }
                     } else {
                         RenderMessageSegments(displayContent: message.content)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 4)
                             .onLongPressGesture {
                                 showActions = true
                             }
@@ -785,7 +798,7 @@ struct MessageBubble: View {
                         Image(systemName: "doc.on.doc")
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.68))
 
                     if message.isFromUser,
                        !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -797,7 +810,7 @@ struct MessageBubble: View {
                             Image(systemName: "pencil")
                         }
                         .buttonStyle(.plain)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.white.opacity(0.68))
                     }
 
                     if !message.isFromUser, let onEditAssistantMessage {
@@ -808,7 +821,7 @@ struct MessageBubble: View {
                             Image(systemName: "pencil")
                         }
                         .buttonStyle(.plain)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.white.opacity(0.68))
                     }
 
                     if !message.isFromUser, let onRegenerateResponse {
@@ -816,7 +829,7 @@ struct MessageBubble: View {
                             Image(systemName: "arrow.clockwise")
                         }
                         .buttonStyle(.plain)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.white.opacity(0.68))
                     }
 
                     if !message.isFromUser,
@@ -826,14 +839,14 @@ struct MessageBubble: View {
                         Spacer()
                         Label(String(format: settings.localized("tokens_per_second_format"), tokenCount, tps), systemImage: "bolt.fill")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.white.opacity(0.63))
                     }
                 }
             }
 
             Text(message.timestamp, style: .time)
                 .font(.caption2)
-                .foregroundColor(.secondary)
+                .foregroundColor(.white.opacity(0.5))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .confirmationDialog(settings.localized("more_options"), isPresented: $showActions) {
@@ -876,7 +889,7 @@ struct TypingIndicator: View {
         HStack(spacing: 4) {
             ForEach(0..<3) { i in
                 Circle()
-                    .fill(Color.secondary)
+                    .fill(Color.white.opacity(0.68))
                     .frame(width: 6, height: 6)
                     .scaleEffect(1.0 + 0.4 * sin(phase + Double(i) * .pi / 1.5))
             }
@@ -910,16 +923,17 @@ private struct RenderMessageSegments: View {
                         if let language, !language.isEmpty {
                             Text(language)
                                 .font(.caption2.weight(.semibold))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(.white.opacity(0.65))
                         }
                         ScrollView(.horizontal, showsIndicators: false) {
                             Text(content.trimmingCharacters(in: .newlines))
                                 .font(.system(.body, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.92))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                     .padding(10)
-                    .background(Color.secondary.opacity(0.12))
+                    .background(Color.white.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
             }
@@ -1017,12 +1031,14 @@ private struct MarkdownMessageText: View {
                     Text(attributed)
                         .font(.body)
                         .lineSpacing(4)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                 } else {
                     Text(line)
                         .font(.body)
                         .lineSpacing(4)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                 }
@@ -1121,8 +1137,11 @@ struct ChatDrawerPanel: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(ApolloLiquidBackground())
             .navigationTitle(settings.localized("drawer_title"))
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     // Back arrow to Home - same as Android drawer's ArrowBack
@@ -1181,20 +1200,25 @@ struct ChatScreen: View {
                         HStack(spacing: 4) {
                             Text(vm.selectedModelName)
                                 .font(.caption.bold())
+                                .foregroundColor(.white)
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.white.opacity(0.78))
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
-                        .background(vm.isBackendLoading ? .orange.opacity(0.2) : .indigo.opacity(0.1))
-                        .foregroundColor(vm.isBackendLoading ? .orange : .indigo)
+                        .background(vm.isBackendLoading ? Color.orange.opacity(0.26) : Color.white.opacity(0.12))
                         .clipShape(Capsule())
+                        .overlay(
+                            Capsule()
+                                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                        )
                     }
                     Spacer()
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(.thinMaterial)
+                .background(.ultraThinMaterial)
             }
 
             ScrollViewReader { proxy in
@@ -1277,6 +1301,7 @@ struct ChatScreen: View {
             if let _ = copiedMessageId {
                 Text(settings.localized("message_copied"))
                     .font(.caption)
+                    .foregroundColor(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(.ultraThinMaterial)
@@ -1305,7 +1330,7 @@ struct ChatScreen: View {
                 .padding(.top, 6)
             }
 
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 let selectedModel = ModelData.models.first(where: { $0.name == vm.selectedModelName })
                 let canAttachVision = (selectedModel?.supportsVision == true) && vm.enableVision
                 let canAttachAudio = (selectedModel?.supportsAudio == true) && vm.enableAudio
@@ -1314,7 +1339,10 @@ struct ChatScreen: View {
                     PhotosPicker(selection: $selectedImageItem, matching: .images) {
                         Image(systemName: "photo")
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.indigo)
+                            .foregroundColor(.white.opacity(0.8))
+                            .padding(8)
+                            .background(Color.white.opacity(0.1))
+                            .clipShape(Circle())
                     }
                     .disabled(vm.isGenerating)
                 }
@@ -1325,55 +1353,67 @@ struct ChatScreen: View {
                     } label: {
                         Image(systemName: "waveform")
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.indigo)
+                            .foregroundColor(.white.opacity(0.8))
+                            .padding(8)
+                            .background(Color.white.opacity(0.1))
+                            .clipShape(Circle())
                     }
                     .disabled(vm.isGenerating)
                 }
 
-                TextField(settings.localized("type_a_message"), text: $vm.inputText, axis: .vertical)
-                    .lineLimit(1...5)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color(.secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 22))
-                    .focused($isComposerFocused)
-                    .onSubmit {
-                        if vm.sendMessage(imageURL: attachedImageURL, audioURL: attachedAudioURL) {
-                            attachedImageURL = nil
-                            attachedAudioURL = nil
-                            selectedImageItem = nil
+                HStack(spacing: 8) {
+                    TextField(settings.localized("type_a_message"), text: $vm.inputText, axis: .vertical)
+                        .lineLimit(1...5)
+                        .padding(.leading, 18)
+                        .padding(.vertical, 14)
+                        .focused($isComposerFocused)
+                        .foregroundColor(.white)
+                        .onSubmit {
+                            if vm.sendMessage(imageURL: attachedImageURL, audioURL: attachedAudioURL) {
+                                attachedImageURL = nil
+                                attachedAudioURL = nil
+                                selectedImageItem = nil
+                            }
                         }
-                    }
 
-                Button {
-                    isComposerFocused = false
-                    if vm.isGenerating {
-                        vm.stopGeneration()
-                    } else {
-                        if vm.sendMessage(imageURL: attachedImageURL, audioURL: attachedAudioURL) {
-                            attachedImageURL = nil
-                            attachedAudioURL = nil
-                            selectedImageItem = nil
+                    Button {
+                        isComposerFocused = false
+                        if vm.isGenerating {
+                            vm.stopGeneration()
+                        } else {
+                            if vm.sendMessage(imageURL: attachedImageURL, audioURL: attachedAudioURL) {
+                                attachedImageURL = nil
+                                attachedAudioURL = nil
+                                selectedImageItem = nil
+                            }
                         }
+                    } label: {
+                        Image(systemName: vm.isGenerating ? "stop.fill" : "arrow.up")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(vm.isGenerating ? .white : .black)
+                            .frame(width: 32, height: 32)
+                            .background(vm.isGenerating ? Color.red.opacity(0.8) : Color.white)
+                            .clipShape(Circle())
                     }
-                } label: {
-                    Image(systemName: vm.isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
-                        .font(.system(size: 34))
-                        .foregroundStyle(vm.isGenerating ? .red : .indigo)
+                    .padding(.trailing, 8)
+                    .disabled(
+                        !vm.isGenerating
+                            && vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            && attachedImageURL == nil
+                            && attachedAudioURL == nil
+                    )
                 }
-                .disabled(
-                    !vm.isGenerating
-                        && vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        && attachedImageURL == nil
-                        && attachedAudioURL == nil
-                )
+                .background(Color.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 24))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(.background)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .animation(.easeOut(duration: 0.2), value: isComposerFocused)
         }
+        .apolloScreenBackground()
         .navigationTitle(vm.chatSessions.first(where: { $0.id == vm.currentSessionId })?.title ?? settings.localized("chat"))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button {
@@ -1488,8 +1528,12 @@ struct ChatScreen: View {
         .font(.caption)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(Color(.secondarySystemBackground))
+        .background(.ultraThinMaterial)
         .clipShape(Capsule())
+        .overlay(
+            Capsule()
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+        )
     }
 
     private func writeAttachmentData(_ data: Data, preferredExtension: String) -> URL? {
@@ -1546,27 +1590,29 @@ struct ChatScreen: View {
             
             Text(settings.localized("welcome_to_llm_hub"))
                 .font(.title2.bold())
+                .foregroundColor(.white)
                 
             if downloadedModels.isEmpty {
                 Text(settings.localized("no_models_downloaded"))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.68))
                 Button {
                     onNavigateToModels()
                 } label: {
                     Label(settings.localized("download_a_model"), systemImage: "arrow.down.circle")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(ApolloIconButtonStyle())
             } else if vm.selectedModelName == settings.localized("no_model_selected") {
                 Text(settings.localized("load_model_to_start"))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.68))
             } else {
                 Text(vm.selectedModelName)
                     .font(.caption)
                     .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(Color.secondary.opacity(0.2))
+                    .background(Color.white.opacity(0.12))
                     .clipShape(Capsule())
+                    .foregroundColor(.white)
                 Text(settings.localized("start_chatting"))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.68))
                     .multilineTextAlignment(.center)
             }
         }

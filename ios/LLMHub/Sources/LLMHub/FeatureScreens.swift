@@ -69,77 +69,96 @@ private struct FeatureModelSettingsSheet: View {
 
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(settings.localized("select_model"))
-                            .font(.headline)
+            ZStack {
+                ApolloLiquidBackground()
 
-                        if isRefreshingModels {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                Text(settings.localized("loading"))
-                                    .foregroundStyle(.secondary)
+                ScrollView {
+                    VStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(settings.localized("select_model"))
+                                .font(.headline)
+                                .foregroundColor(.white)
+
+                            if isRefreshingModels {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                    Text(settings.localized("loading"))
+                                        .foregroundStyle(.white.opacity(0.7))
+                                }
+                            } else {
+                                Picker("", selection: $selectedModelName) {
+                                    ForEach(models, id: \.id) { model in
+                                        Text(model.name).tag(model.name)
+                                    }
+                                }
+                                .pickerStyle(.menu)
                             }
-                        } else {
-                            Picker("", selection: $selectedModelName) {
-                                ForEach(models, id: \.id) { model in
-                                    Text(model.name).tag(model.name)
+
+                            HStack {
+                                Text(settings.localized("max_tokens"))
+                                    .foregroundColor(.white)
+                                Spacer()
+                                Text("\(Int(maxTokens))")
+                                    .foregroundColor(.white.opacity(0.9))
+                                    .monospacedDigit()
+                            }
+                            Slider(value: $maxTokens, in: 1...maxContextCap, step: 1) { editing in
+                                if !editing {
+                                    maxTokens = min(max(1, maxTokens), maxContextCap)
                                 }
                             }
-                            .pickerStyle(.menu)
-                        }
+                            .tint(.blue.opacity(0.86))
 
-                        HStack {
-                            Text(settings.localized("max_tokens"))
-                            Spacer()
-                            Text("\(Int(maxTokens))")
-                                .monospacedDigit()
-                        }
-                        Slider(value: $maxTokens, in: 1...maxContextCap, step: 1)
-                            .onChange(of: maxTokens) { _, newValue in
-                                maxTokens = min(max(1, newValue), maxContextCap)
+                            Toggle(settings.localized("enable_thinking"), isOn: $enableThinking)
+                                .tint(.blue.opacity(0.86))
+                                .foregroundColor(.white)
+                            if supportsVisionToggle {
+                                Toggle(settings.localized("scam_detector_enable_vision"), isOn: $enableVision)
+                                    .tint(.blue.opacity(0.86))
+                                    .foregroundColor(.white)
                             }
+                        }
+                        .padding()
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                        )
 
-                        Toggle(settings.localized("enable_thinking"), isOn: $enableThinking)
-                        if supportsVisionToggle {
-                            Toggle(settings.localized("scam_detector_enable_vision"), isOn: $enableVision)
+                        HStack(spacing: 10) {
+                            Button {
+                                Task { await onLoad() }
+                            } label: {
+                                if isLoading {
+                                    ProgressView()
+                                } else {
+                                    Text(settings.localized("load_model"))
+                                }
+                            }
+                            .buttonStyle(ApolloIconButtonStyle())
+                            .tint(.blue.opacity(0.86))
+                            .disabled(isLoading || selectedModelName.isEmpty || isRefreshingModels)
+
+                            Button(settings.localized("unload_model"), role: .destructive) {
+                                onUnload()
+                            }
+                            .buttonStyle(ApolloIconButtonStyle())
+                            .disabled(isLoading)
+                        }
+
+                        if let errorMessage, !errorMessage.isEmpty {
+                            Text(errorMessage)
+                                .foregroundColor(.red.opacity(0.9))
+                                .font(.caption)
                         }
                     }
                     .padding()
-                    .background(Color(uiColor: .secondarySystemGroupedBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-
-                    HStack(spacing: 10) {
-                        Button {
-                            Task { await onLoad() }
-                        } label: {
-                            if isLoading {
-                                ProgressView()
-                            } else {
-                                Text(settings.localized("load_model"))
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isLoading || selectedModelName.isEmpty || isRefreshingModels)
-
-                        Button(settings.localized("unload_model"), role: .destructive) {
-                            onUnload()
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(isLoading)
-                    }
-
-                    if let errorMessage, !errorMessage.isEmpty {
-                        Text(errorMessage)
-                            .foregroundColor(.red)
-                            .font(.caption)
-                    }
                 }
-                .padding()
             }
             .navigationTitle(settings.localized("feature_settings_title"))
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(settings.localized("done")) { dismiss() }
@@ -198,13 +217,13 @@ struct WritingAidScreen: View {
                         .font(.title3.weight(.bold))
                     Text(settings.localized("scam_detector_load_model_desc"))
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.7))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                     Button(settings.localized("feature_settings_title")) {
                         showSettings = true
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(ApolloIconButtonStyle())
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -215,7 +234,7 @@ struct WritingAidScreen: View {
                         TextEditor(text: $inputText)
                             .frame(minHeight: 140)
                             .padding(8)
-                            .background(Color(uiColor: .secondarySystemBackground))
+                            .background(.ultraThinMaterial)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
 
                         HStack {
@@ -228,7 +247,7 @@ struct WritingAidScreen: View {
                             } label: {
                                 Label(settings.localized("paste"), systemImage: "doc.on.clipboard")
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(ApolloIconButtonStyle())
                             Spacer()
                         }
                     }
@@ -249,7 +268,7 @@ struct WritingAidScreen: View {
                             Text(isProcessing ? settings.localized("processing_tap_to_cancel") : settings.localized("writing_aid_process"))
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(ApolloIconButtonStyle())
                         .disabled(isLoading || inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                         Button(settings.localized("copy")) {
@@ -257,7 +276,7 @@ struct WritingAidScreen: View {
                             UIPasteboard.general.string = outputText
                             #endif
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(ApolloIconButtonStyle())
                         .disabled(outputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     .padding(.horizontal)
@@ -270,7 +289,7 @@ struct WritingAidScreen: View {
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(10)
-                                .background(Color(uiColor: .secondarySystemBackground))
+                                .background(.ultraThinMaterial)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
                         .padding(.horizontal)
@@ -287,6 +306,8 @@ struct WritingAidScreen: View {
         }
         .navigationTitle(settings.localized("writing_aid_title"))
         .navigationBarTitleDisplayMode(.inline)
+        .apolloScreenBackground()
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: onNavigateBack) { Image(systemName: "arrow.left") }
@@ -452,13 +473,13 @@ struct ScamDetectorScreen: View {
                         .font(.title3.weight(.bold))
                     Text(settings.localized("scam_detector_load_model_desc"))
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.7))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                     Button(settings.localized("feature_settings_title")) {
                         showSettings = true
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(ApolloIconButtonStyle())
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -469,7 +490,7 @@ struct ScamDetectorScreen: View {
                         TextEditor(text: $inputText)
                             .frame(minHeight: 120)
                             .padding(8)
-                            .background(Color(uiColor: .secondarySystemBackground))
+                            .background(.ultraThinMaterial)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
 
                         HStack {
@@ -482,7 +503,7 @@ struct ScamDetectorScreen: View {
                             } label: {
                                 Label(settings.localized("paste"), systemImage: "doc.on.clipboard")
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(ApolloIconButtonStyle())
                             Spacer()
                         }
 
@@ -492,7 +513,7 @@ struct ScamDetectorScreen: View {
                                 Label(visionLabel, systemImage: "photo")
                                     .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(ApolloIconButtonStyle())
 
                             if let selectedImageURL,
                                let uiImage = UIImage(contentsOfFile: selectedImageURL.path) {
@@ -523,7 +544,7 @@ struct ScamDetectorScreen: View {
                             ProgressView()
                             Text(settings.localized("scam_detector_fetching_url"))
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.white.opacity(0.68))
                             Spacer()
                         }
                         .padding(.horizontal)
@@ -536,7 +557,7 @@ struct ScamDetectorScreen: View {
                             Text(isAnalyzing ? settings.localized("scam_detector_analyzing") : settings.localized("scam_detector_analyze"))
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(ApolloIconButtonStyle())
                         .disabled(isLoading)
 
                         Button(settings.localized("copy")) {
@@ -544,7 +565,7 @@ struct ScamDetectorScreen: View {
                             UIPasteboard.general.string = outputText
                             #endif
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(ApolloIconButtonStyle())
                         .disabled(outputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     .padding(.horizontal)
@@ -557,7 +578,7 @@ struct ScamDetectorScreen: View {
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(10)
-                                .background(Color(uiColor: .secondarySystemBackground))
+                                .background(.ultraThinMaterial)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
                         .padding(.horizontal)
@@ -574,6 +595,8 @@ struct ScamDetectorScreen: View {
         }
         .navigationTitle(settings.localized("scam_detector_title"))
         .navigationBarTitleDisplayMode(.inline)
+        .apolloScreenBackground()
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: onNavigateBack) { Image(systemName: "arrow.left") }
@@ -856,13 +879,13 @@ struct VibeCoderScreen: View {
                         .font(.title3.weight(.bold))
                     Text(settings.localized("scam_detector_load_model_desc"))
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.7))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                     Button(settings.localized("feature_settings_title")) {
                         showSettings = true
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(ApolloIconButtonStyle())
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -873,21 +896,21 @@ struct VibeCoderScreen: View {
                         } label: {
                             Label(settings.localized("vibe_coder_open_folder"), systemImage: "folder")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(ApolloIconButtonStyle())
 
                         Button {
                             showCreateFileDialog = true
                         } label: {
                             Label(settings.localized("vibe_coder_new_file"), systemImage: "plus")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(ApolloIconButtonStyle())
 
                         Button {
                             saveCurrentFile()
                         } label: {
                             Label(settings.localized("vibe_coder_save_file"), systemImage: "square.and.arrow.down")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(ApolloIconButtonStyle())
                         .disabled(!hasFileSession)
                     }
                     .padding(.horizontal)
@@ -895,12 +918,12 @@ struct VibeCoderScreen: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(currentFileName ?? settings.localized("vibe_coder_open_or_create_file"))
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.white.opacity(0.72))
                         TextEditor(text: $generatedCode)
                             .font(.system(.body, design: .monospaced))
                             .frame(minHeight: 220)
                             .padding(8)
-                            .background(Color(uiColor: .secondarySystemBackground))
+                            .background(.ultraThinMaterial)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
                     .padding(.horizontal)
@@ -911,12 +934,12 @@ struct VibeCoderScreen: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(message.role == "user" ? settings.localized("vibe_coder_message_you") : settings.localized("vibe_coder_message_ai"))
                                         .font(.caption.weight(.semibold))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(.white.opacity(0.65))
                                     Text(message.text)
                                         .textSelection(.enabled)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .padding(8)
-                                        .background(Color(uiColor: .secondarySystemBackground))
+                                        .background(.ultraThinMaterial)
                                         .clipShape(RoundedRectangle(cornerRadius: 10))
                                 }
                             }
@@ -930,7 +953,7 @@ struct VibeCoderScreen: View {
                         TextEditor(text: $promptText)
                             .frame(minHeight: 90)
                             .padding(8)
-                            .background(Color(uiColor: .secondarySystemBackground))
+                            .background(.ultraThinMaterial)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
                     .padding(.horizontal)
@@ -942,7 +965,7 @@ struct VibeCoderScreen: View {
                             Text(isGenerating ? settings.localized("vibe_coder_stop_generation") : settings.localized("vibe_coder_generate"))
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(ApolloIconButtonStyle())
                         .disabled(isLoading || promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                         Button(settings.localized("vibe_coder_copy_code")) {
@@ -950,7 +973,7 @@ struct VibeCoderScreen: View {
                             UIPasteboard.general.string = generatedCode
                             #endif
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(ApolloIconButtonStyle())
                         .disabled(generatedCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     .padding(.horizontal)
@@ -966,6 +989,8 @@ struct VibeCoderScreen: View {
         }
         .navigationTitle(settings.localized("vibe_coder_title"))
         .navigationBarTitleDisplayMode(.inline)
+        .apolloScreenBackground()
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: onNavigateBack) { Image(systemName: "arrow.left") }

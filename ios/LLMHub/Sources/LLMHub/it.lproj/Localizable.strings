@@ -43,7 +43,7 @@
 "about_llm_hub" = "Informazioni su LLM Hub";
 "about_description" = "LLM Hub è un\'app Android open-source che porta la potenza dei Large Language Models direttamente sul tuo dispositivo mobile. Sperimenta conversazioni IA con modelli all\'avanguardia come Gemma, Llama e Phi - tutti in esecuzione localmente sul tuo telefono per la massima privacy e accessibilità offline.";
 "key_features" = "Funzionalità Chiave";
-"feature_multiple_models" = "🤖 Molteplici Modelli LLM: Gemma-3, Llama-3.2, Phi-4 e Gemma-3n";
+"feature_multiple_models" = "🤖 Molteplici Modelli LLM: Gemma-3, Llama-3.2, Phi-4 e Translate Gemma";
 "feature_on_device" = "📱 Elaborazione sul Dispositivo: Privacy totale, nessuna connessione internet richiesta";
 "feature_vision_support" = "🖼️ Supporto Visione: Modelli multimodali che comprendono le immagini";
 "feature_gpu_acceleration" = "⚡ Accelerazione GPU: Prestazioni ottimizzate sui dispositivi supportati";
@@ -412,7 +412,7 @@
 "translator_auto_detect" = "Rilevamento automatico";
 "translator_translate" = "Traduci";
 "translator_result" = "Traduzione";
-"translator_requires_gemma3n" = "Questa funzionalità richiede un modello Gemma-3n. Per favore scaricane uno dalla schermata Modelli.";
+"translator_requires_gemma3n" = "Questa funzionalità richiede un modello Translate Gemma. Per favore scaricane uno dalla schermata Modelli.";
 "transcriber_title" = "Trascrittore offline";
 "transcriber_record" = "Registra audio";
 "transcriber_upload" = "Carica audio";
@@ -420,7 +420,7 @@
 "transcriber_result" = "Trascrizione";
 "transcriber_recording" = "Registrazione...";
 "transcriber_stop" = "Ferma registrazione";
-"transcriber_requires_gemma3n" = "Questa funzionalità richiede un modello Gemma-3n con supporto audio. Per favore scaricane uno dalla schermata Modelli.";
+"transcriber_requires_gemma3n" = "Questa funzionalità richiede un modello Translate Gemma con supporto audio. Per favore scaricane uno dalla schermata Modelli.";
 "scam_detector_title" = "Rilevatore di Truffe";
 "scam_detector_input_label" = "Inserisci il contenuto da analizzare";
 "scam_detector_input_hint" = "Incolla testo, carica un\'immagine o inserisci un URL per analizzare le truffe...";
@@ -564,7 +564,7 @@
 "model_loaded" = "Modello caricato con successo";
 "model_loading" = "Caricamento modello…";
 "model_load_failed" = "Caricamento modello non riuscito";
-"multimodal_models_only" = "Supportati solo modelli multimodali (Gemma-3n)";
+"multimodal_models_only" = "Supportati solo modelli multimodali (Translate Gemma)";
 "text_models_only" = "Supportati solo modelli di testo";
 "enable_audio_input" = "Abilita input audio";
 "audio_input_enabled" = "Input audio abilitato";
@@ -592,8 +592,8 @@
 "web_search_found_results" = "✅ Trovati %1$d risultati. Analisi in corso...";
 "web_search_no_results" = "❌ Nessun risultato di ricerca attuale trovato. Fornendo risposta basata sui dati di addestramento...";
 "web_search_failed" = "❌ Ricerca web fallita: %1$@. Fornendo risposta basata sui dati di addestramento...";
-"vision_chat_cannot_open" = "🚫 **Impossibile aprire questa chat**\n\nQuesta conversazione contiene immagini, ma hai attualmente un **modello solo testo** caricato:\n\n📱 **Modello attuale:** %1$@\n🖼️ **Questa chat:** Contiene immagini\n\n---\n\n## 🎯 Come risolvere:\n\n1. **📥 Scarica un modello di visione**\n   - Vai a \"Scarica modelli\"\n   - Cerca modelli contrassegnati con 🖼️ o \"Visione+Testo\"\n   - Prova: **Gemma-3n E2B (Visione+Testo)**\n\n2. **🔄 Passa al modello di visione**\n   - Carica il modello di visione che hai scaricato\n   - I modelli di visione possono gestire sia testo che immagini\n\n3. **✅ Torna a questa chat**\n   - Una volta caricato un modello di visione, questa chat funzionerà perfettamente!\n\n---\n\n💡 **Suggerimento pro:** I modelli di visione possono fare tutto quello che fanno i modelli di testo, più gestire le immagini!";
-"vision_image_cannot_send" = "🖼️ **Impossibile inviare immagini**\n\nStai cercando di inviare un\'immagine, ma il modello attuale è **solo testo**:\n\n📱 **Modello attuale:** %1$@\n\n---\n\n## 🎯 Per inviare immagini:\n\n1. **📥 Scarica un modello di visione**\n   - Tocca il menu → \"Scarica modelli\"\n   - Cerca modelli 🖼️ **Visione+Testo**\n   - Consigliato: **Gemma-3n E2B (Visione+Testo)**\n\n2. **🔄 Cambia modelli**\n   - Carica il modello di visione che hai scaricato\n   - I modelli di visione gestiscono sia testo che immagini\n\n3. **✅ Riprova**\n   - Una volta caricato, puoi inviare immagini liberamente!\n\n---\n\n💡 **Suggerimento pro:** I modelli di visione possono fare tutto quello che fanno i modelli di testo, più capire le immagini!";
+"vision_chat_cannot_open" = "🚫 **Impossibile aprire questa chat**\n\nQuesta conversazione contiene immagini, ma hai attualmente un **modello solo testo** caricato:\n\n📱 **Modello attuale:** %1$@\n🖼️ **Questa chat:** Contiene immagini\n\n---\n\n## 🎯 Come risolvere:\n\n1. **📥 Scarica un modello di visione**\n   - Vai a \"Scarica modelli\"\n   - Cerca modelli contrassegnati con 🖼️ o \"Visione+Testo\"\n   - Prova: **Translate Gemma E2B (Visione+Testo)**\n\n2. **🔄 Passa al modello di visione**\n   - Carica il modello di visione che hai scaricato\n   - I modelli di visione possono gestire sia testo che immagini\n\n3. **✅ Torna a questa chat**\n   - Una volta caricato un modello di visione, questa chat funzionerà perfettamente!\n\n---\n\n💡 **Suggerimento pro:** I modelli di visione possono fare tutto quello che fanno i modelli di testo, più gestire le immagini!";
+"vision_image_cannot_send" = "🖼️ **Impossibile inviare immagini**\n\nStai cercando di inviare un\'immagine, ma il modello attuale è **solo testo**:\n\n📱 **Modello attuale:** %1$@\n\n---\n\n## 🎯 Per inviare immagini:\n\n1. **📥 Scarica un modello di visione**\n   - Tocca il menu → \"Scarica modelli\"\n   - Cerca modelli 🖼️ **Visione+Testo**\n   - Consigliato: **Translate Gemma E2B (Visione+Testo)**\n\n2. **🔄 Cambia modelli**\n   - Carica il modello di visione che hai scaricato\n   - I modelli di visione gestiscono sia testo che immagini\n\n3. **✅ Riprova**\n   - Una volta caricato, puoi inviare immagini liberamente!\n\n---\n\n💡 **Suggerimento pro:** I modelli di visione possono fare tutto quello che fanno i modelli di testo, più capire le immagini!";
 "please_download_model" = "Scarica un modello per iniziare a chattare.";
 "model_not_loaded" = "Modello non caricato correttamente. Prova a passare a un modello diverso o riavvia l\'app.";
 "no_response_produced" = "Nessuna risposta prodotta. (Possibile: limite token o reset sessione). Tocca Rigenera.";

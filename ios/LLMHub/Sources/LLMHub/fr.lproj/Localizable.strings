@@ -42,7 +42,7 @@
 "about_llm_hub" = "À propos de LLM Hub";
 "about_description" = "LLM Hub est une application Android open-source qui apporte la puissance des Large Language Models directement sur votre appareil mobile.";
 "key_features" = "Fonctionnalités Clés";
-"feature_multiple_models" = "Modèles LLM Multiples : Gemma-3, Llama-3.2, Phi-4, et Gemma-3n";
+"feature_multiple_models" = "Modèles LLM Multiples : Gemma-3, Llama-3.2, Phi-4, et Translate Gemma";
 "feature_on_device" = "Traitement sur Appareil : Confidentialité complète, aucun internet requis";
 "feature_vision_support" = "Support Vision : Modèles multimodaux qui comprennent les images";
 "feature_gpu_acceleration" = "Accélération GPU : Performance optimisée sur les appareils compatibles";
@@ -428,7 +428,7 @@
 "translator_auto_detect" = "Détection Automatique";
 "translator_translate" = "Traduire";
 "translator_result" = "Traduction";
-"translator_requires_gemma3n" = "Cette fonctionnalité nécessite un modèle Gemma-3n. Veuillez en télécharger un depuis l\'écran Modèles.";
+"translator_requires_gemma3n" = "Cette fonctionnalité nécessite un modèle Translate Gemma. Veuillez en télécharger un depuis l\'écran Modèles.";
 "transcriber_title" = "Transcripteur Hors Ligne";
 "transcriber_record" = "Enregistrer l\'Audio";
 "transcriber_upload" = "Téléverser l\'Audio";
@@ -436,7 +436,7 @@
 "transcriber_result" = "Transcription";
 "transcriber_recording" = "Enregistrement...";
 "transcriber_stop" = "Arrêter l\'Enregistrement";
-"transcriber_requires_gemma3n" = "Cette fonctionnalité nécessite un modèle Gemma-3n avec support audio. Veuillez en télécharger un depuis l\'écran Modèles.";
+"transcriber_requires_gemma3n" = "Cette fonctionnalité nécessite un modèle Translate Gemma avec support audio. Veuillez en télécharger un depuis l\'écran Modèles.";
 "scam_detector_title" = "Détecteur d\'Arnaques";
 "scam_detector_input_label" = "Entrez le contenu à analyser";
 "scam_detector_input_hint" = "Collez du texte, téléchargez une image ou entrez une URL pour analyser les arnaques...";
@@ -579,7 +579,7 @@
 "model_loaded" = "Modèle chargé avec succès";
 "model_loading" = "Chargement du modèle…";
 "model_load_failed" = "Échec du chargement du modèle";
-"multimodal_models_only" = "Seuls les modèles multimodaux (Gemma-3n) sont supportés";
+"multimodal_models_only" = "Seuls les modèles multimodaux (Translate Gemma) sont supportés";
 "text_models_only" = "Seuls les modèles texte sont supportés";
 "translator_enable_vision" = "Activer la Vision";
 "translator_vision_description" = "Traduire le texte des images";
@@ -589,8 +589,8 @@
 "web_search_found_results" = "✅ %1$d résultats trouvés. Analyse en cours...";
 "web_search_no_results" = "❌ Aucun résultat de recherche actuel trouvé. Fourniture d\'une réponse basée sur les données d\'entraînement...";
 "web_search_failed" = "❌ Recherche web échouée: %1$@. Fourniture d\'une réponse basée sur les données d\'entraînement...";
-"vision_chat_cannot_open" = "🚫 **Impossible d\'ouvrir ce chat**\n\nCette conversation contient des images, mais vous avez actuellement un **modèle texte uniquement** chargé:\n\n📱 **Modèle actuel:** %1$@\n🖼️ **Ce chat:** Contient des images\n\n---\n\n## 🎯 Comment résoudre ce problème:\n\n1. **📥 Télécharger un modèle de vision**\n   - Allez à \"Télécharger des modèles\"\n   - Cherchez des modèles marqués avec 🖼️ ou \"Vision+Texte\"\n   - Essayez: **Gemma-3n E2B (Vision+Texte)**\n\n2. **🔄 Passer au modèle de vision**\n   - Chargez le modèle de vision que vous avez téléchargé\n   - Les modèles de vision peuvent gérer à la fois le texte ET les images\n\n3. **✅ Revenir à ce chat**\n   - Une fois qu\'un modèle de vision est chargé, ce chat fonctionnera parfaitement!\n\n---\n\n💡 **Conseil pro:** Les modèles de vision peuvent faire tout ce que font les modèles de texte, plus gérer les images!";
-"vision_image_cannot_send" = "🖼️ **Impossible d\'envoyer des images**\n\nVous essayez d\'envoyer une image, mais le modèle actuel est **texte uniquement**:\n\n📱 **Modèle actuel:** %1$@\n\n---\n\n## 🎯 Pour envoyer des images:\n\n1. **📥 Télécharger un modèle de vision**\n   - Appuyez sur le menu → \"Télécharger des modèles\"\n   - Cherchez des modèles 🖼️ **Vision+Texte**\n   - Recommandé: **Gemma-3n E2B (Vision+Texte)**\n\n2. **🔄 Changer de modèles**\n   - Chargez le modèle de vision que vous avez téléchargé\n   - Les modèles de vision gèrent à la fois le texte et les images\n\n3. **✅ Réessayer**\n   - Une fois chargé, vous pouvez envoyer des images librement!\n\n---\n\n💡 **Conseil pro:** Les modèles de vision peuvent faire tout ce que font les modèles de texte, plus comprendre les images!";
+"vision_chat_cannot_open" = "🚫 **Impossible d\'ouvrir ce chat**\n\nCette conversation contient des images, mais vous avez actuellement un **modèle texte uniquement** chargé:\n\n📱 **Modèle actuel:** %1$@\n🖼️ **Ce chat:** Contient des images\n\n---\n\n## 🎯 Comment résoudre ce problème:\n\n1. **📥 Télécharger un modèle de vision**\n   - Allez à \"Télécharger des modèles\"\n   - Cherchez des modèles marqués avec 🖼️ ou \"Vision+Texte\"\n   - Essayez: **Translate Gemma E2B (Vision+Texte)**\n\n2. **🔄 Passer au modèle de vision**\n   - Chargez le modèle de vision que vous avez téléchargé\n   - Les modèles de vision peuvent gérer à la fois le texte ET les images\n\n3. **✅ Revenir à ce chat**\n   - Une fois qu\'un modèle de vision est chargé, ce chat fonctionnera parfaitement!\n\n---\n\n💡 **Conseil pro:** Les modèles de vision peuvent faire tout ce que font les modèles de texte, plus gérer les images!";
+"vision_image_cannot_send" = "🖼️ **Impossible d\'envoyer des images**\n\nVous essayez d\'envoyer une image, mais le modèle actuel est **texte uniquement**:\n\n📱 **Modèle actuel:** %1$@\n\n---\n\n## 🎯 Pour envoyer des images:\n\n1. **📥 Télécharger un modèle de vision**\n   - Appuyez sur le menu → \"Télécharger des modèles\"\n   - Cherchez des modèles 🖼️ **Vision+Texte**\n   - Recommandé: **Translate Gemma E2B (Vision+Texte)**\n\n2. **🔄 Changer de modèles**\n   - Chargez le modèle de vision que vous avez téléchargé\n   - Les modèles de vision gèrent à la fois le texte et les images\n\n3. **✅ Réessayer**\n   - Une fois chargé, vous pouvez envoyer des images librement!\n\n---\n\n💡 **Conseil pro:** Les modèles de vision peuvent faire tout ce que font les modèles de texte, plus comprendre les images!";
 "please_download_model" = "Veuillez télécharger un modèle pour commencer à discuter.";
 "model_not_loaded" = "Modèle non chargé correctement. Veuillez essayer de passer à un modèle différent ou redémarrer l\'application.";
 "no_response_produced" = "Aucune réponse produite. (Possible: limite de tokens ou réinitialisation de session). Appuyez sur Régénérer.";

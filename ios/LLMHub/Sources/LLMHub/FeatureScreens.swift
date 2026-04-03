@@ -22,6 +22,235 @@ private enum WritingAidMode: String, CaseIterable {
     case concise = "writing_aid_tone_concise"
 }
 
+private struct TranslatorLanguage: Identifiable, Hashable {
+    let code: String
+    let localizationKey: String
+
+    var id: String { code }
+}
+
+private let translatorLanguageEnglishNames: [String: String] = [
+    "en": "English",
+    "af": "Afrikaans",
+    "am": "Amharic",
+    "ar": "Arabic",
+    "hy": "Armenian",
+    "az": "Azerbaijani",
+    "eu": "Basque",
+    "bn": "Bengali",
+    "bg": "Bulgarian",
+    "my": "Burmese",
+    "ca": "Catalan",
+    "zh-CN": "Chinese (Simplified)",
+    "zh-TW": "Chinese (Traditional)",
+    "hr": "Croatian",
+    "cs": "Czech",
+    "da": "Danish",
+    "nl": "Dutch",
+    "et": "Estonian",
+    "tl": "Filipino",
+    "fi": "Finnish",
+    "fr": "French",
+    "gl": "Galician",
+    "ka": "Georgian",
+    "de": "German",
+    "el": "Greek",
+    "gu": "Gujarati",
+    "ha": "Hausa",
+    "he": "Hebrew",
+    "hi": "Hindi",
+    "hu": "Hungarian",
+    "is": "Icelandic",
+    "ig": "Igbo",
+    "id": "Indonesian",
+    "it": "Italian",
+    "ja": "Japanese",
+    "kn": "Kannada",
+    "kk": "Kazakh",
+    "km": "Khmer",
+    "ko": "Korean",
+    "lo": "Lao",
+    "lv": "Latvian",
+    "lt": "Lithuanian",
+    "ms": "Malay",
+    "ml": "Malayalam",
+    "mr": "Marathi",
+    "ne": "Nepali",
+    "no": "Norwegian",
+    "ps": "Pashto",
+    "fa": "Persian",
+    "pl": "Polish",
+    "pt": "Portuguese",
+    "pa": "Punjabi",
+    "ro": "Romanian",
+    "ru": "Russian",
+    "sr": "Serbian",
+    "sd": "Sindhi",
+    "si": "Sinhala",
+    "sk": "Slovak",
+    "sl": "Slovenian",
+    "so": "Somali",
+    "es": "Spanish",
+    "sw": "Swahili",
+    "sv": "Swedish",
+    "ta": "Tamil",
+    "te": "Telugu",
+    "th": "Thai",
+    "tr": "Turkish",
+    "uk": "Ukrainian",
+    "ur": "Urdu",
+    "uz": "Uzbek",
+    "vi": "Vietnamese",
+    "yo": "Yoruba",
+    "zu": "Zulu",
+]
+
+private let translatorLanguages: [TranslatorLanguage] = [
+    TranslatorLanguage(code: "en", localizationKey: "lang_english"),
+    TranslatorLanguage(code: "af", localizationKey: "lang_afrikaans"),
+    TranslatorLanguage(code: "am", localizationKey: "lang_amharic"),
+    TranslatorLanguage(code: "ar", localizationKey: "lang_arabic"),
+    TranslatorLanguage(code: "hy", localizationKey: "lang_armenian"),
+    TranslatorLanguage(code: "az", localizationKey: "lang_azerbaijani"),
+    TranslatorLanguage(code: "eu", localizationKey: "lang_basque"),
+    TranslatorLanguage(code: "bn", localizationKey: "lang_bengali"),
+    TranslatorLanguage(code: "bg", localizationKey: "lang_bulgarian"),
+    TranslatorLanguage(code: "my", localizationKey: "lang_burmese"),
+    TranslatorLanguage(code: "ca", localizationKey: "lang_catalan"),
+    TranslatorLanguage(code: "zh-CN", localizationKey: "lang_chinese"),
+    TranslatorLanguage(code: "zh-TW", localizationKey: "lang_chinese_traditional"),
+    TranslatorLanguage(code: "hr", localizationKey: "lang_croatian"),
+    TranslatorLanguage(code: "cs", localizationKey: "lang_czech"),
+    TranslatorLanguage(code: "da", localizationKey: "lang_danish"),
+    TranslatorLanguage(code: "nl", localizationKey: "lang_dutch"),
+    TranslatorLanguage(code: "et", localizationKey: "lang_estonian"),
+    TranslatorLanguage(code: "tl", localizationKey: "lang_filipino"),
+    TranslatorLanguage(code: "fi", localizationKey: "lang_finnish"),
+    TranslatorLanguage(code: "fr", localizationKey: "lang_french"),
+    TranslatorLanguage(code: "gl", localizationKey: "lang_galician"),
+    TranslatorLanguage(code: "ka", localizationKey: "lang_georgian"),
+    TranslatorLanguage(code: "de", localizationKey: "lang_german"),
+    TranslatorLanguage(code: "el", localizationKey: "lang_greek"),
+    TranslatorLanguage(code: "gu", localizationKey: "lang_gujarati"),
+    TranslatorLanguage(code: "ha", localizationKey: "lang_hausa"),
+    TranslatorLanguage(code: "he", localizationKey: "lang_hebrew"),
+    TranslatorLanguage(code: "hi", localizationKey: "lang_hindi"),
+    TranslatorLanguage(code: "hu", localizationKey: "lang_hungarian"),
+    TranslatorLanguage(code: "is", localizationKey: "lang_icelandic"),
+    TranslatorLanguage(code: "ig", localizationKey: "lang_igbo"),
+    TranslatorLanguage(code: "id", localizationKey: "lang_indonesian"),
+    TranslatorLanguage(code: "it", localizationKey: "lang_italian"),
+    TranslatorLanguage(code: "ja", localizationKey: "lang_japanese"),
+    TranslatorLanguage(code: "kn", localizationKey: "lang_kannada"),
+    TranslatorLanguage(code: "kk", localizationKey: "lang_kazakh"),
+    TranslatorLanguage(code: "km", localizationKey: "lang_khmer"),
+    TranslatorLanguage(code: "ko", localizationKey: "lang_korean"),
+    TranslatorLanguage(code: "lo", localizationKey: "lang_lao"),
+    TranslatorLanguage(code: "lv", localizationKey: "lang_latvian"),
+    TranslatorLanguage(code: "lt", localizationKey: "lang_lithuanian"),
+    TranslatorLanguage(code: "ms", localizationKey: "lang_malay"),
+    TranslatorLanguage(code: "ml", localizationKey: "lang_malayalam"),
+    TranslatorLanguage(code: "mr", localizationKey: "lang_marathi"),
+    TranslatorLanguage(code: "ne", localizationKey: "lang_nepali"),
+    TranslatorLanguage(code: "no", localizationKey: "lang_norwegian"),
+    TranslatorLanguage(code: "ps", localizationKey: "lang_pashto"),
+    TranslatorLanguage(code: "fa", localizationKey: "lang_persian"),
+    TranslatorLanguage(code: "pl", localizationKey: "lang_polish"),
+    TranslatorLanguage(code: "pt", localizationKey: "lang_portuguese"),
+    TranslatorLanguage(code: "pa", localizationKey: "lang_punjabi"),
+    TranslatorLanguage(code: "ro", localizationKey: "lang_romanian"),
+    TranslatorLanguage(code: "ru", localizationKey: "lang_russian"),
+    TranslatorLanguage(code: "sr", localizationKey: "lang_serbian"),
+    TranslatorLanguage(code: "sd", localizationKey: "lang_sindhi"),
+    TranslatorLanguage(code: "si", localizationKey: "lang_sinhala"),
+    TranslatorLanguage(code: "sk", localizationKey: "lang_slovak"),
+    TranslatorLanguage(code: "sl", localizationKey: "lang_slovenian"),
+    TranslatorLanguage(code: "so", localizationKey: "lang_somali"),
+    TranslatorLanguage(code: "es", localizationKey: "lang_spanish"),
+    TranslatorLanguage(code: "sw", localizationKey: "lang_swahili"),
+    TranslatorLanguage(code: "sv", localizationKey: "lang_swedish"),
+    TranslatorLanguage(code: "ta", localizationKey: "lang_tamil"),
+    TranslatorLanguage(code: "te", localizationKey: "lang_telugu"),
+    TranslatorLanguage(code: "th", localizationKey: "lang_thai"),
+    TranslatorLanguage(code: "tr", localizationKey: "lang_turkish"),
+    TranslatorLanguage(code: "uk", localizationKey: "lang_ukrainian"),
+    TranslatorLanguage(code: "ur", localizationKey: "lang_urdu"),
+    TranslatorLanguage(code: "uz", localizationKey: "lang_uzbek"),
+    TranslatorLanguage(code: "vi", localizationKey: "lang_vietnamese"),
+    TranslatorLanguage(code: "yo", localizationKey: "lang_yoruba"),
+    TranslatorLanguage(code: "zu", localizationKey: "lang_zulu"),
+]
+
+private func isTranslateGemmaModel(_ model: AIModel) -> Bool {
+    !model.isDependencyOnly
+        && model.category == .multimodal
+        && model.supportsVision
+        && model.name.hasPrefix("Translate Gemma 4B")
+}
+
+@MainActor
+private func downloadableTranslatorModels() -> [AIModel] {
+    downloadableFeatureModels().filter(isTranslateGemmaModel)
+}
+
+private func translatorQuantizationTag(for modelName: String) -> String? {
+    guard let leftParen = modelName.lastIndex(of: "("),
+          let rightParen = modelName.lastIndex(of: ")"),
+          leftParen < rightParen else {
+        return nil
+    }
+    let tag = modelName[modelName.index(after: leftParen)..<rightParen]
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased()
+    return tag.isEmpty ? nil : tag
+}
+
+private func translatorVisionFamilyName(for modelName: String) -> String {
+    let base = modelName.components(separatedBy: " (").first ?? modelName
+    return base
+        .replacingOccurrences(of: "Vision Projector", with: "", options: [.caseInsensitive])
+        .replacingOccurrences(of: "Projector", with: "", options: [.caseInsensitive])
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased()
+}
+
+@MainActor
+private func translatorHasDownloadedVisionProjector(for model: AIModel) -> Bool {
+    guard model.modelFormat == .gguf, model.supportsVision else { return true }
+
+    let family = translatorVisionFamilyName(for: model.name)
+    let quantTag = translatorQuantizationTag(for: model.name)
+
+    let candidates = ModelData.models.filter { candidate in
+        candidate.isDependencyOnly
+            && candidate.inferenceFramework == model.inferenceFramework
+            && translatorVisionFamilyName(for: candidate.name) == family
+            && RunAnywhere.isModelDownloaded(candidate.id, framework: candidate.inferenceFramework)
+    }
+
+    guard !candidates.isEmpty else { return false }
+
+    if quantTag == "f16" {
+        return candidates.contains { ($0.name.lowercased().contains("f16") || $0.url.lowercased().contains("f16")) }
+    }
+
+    return candidates.contains {
+        $0.name.lowercased().contains("q8_0")
+            || $0.url.lowercased().contains("q8_0")
+            || $0.name.lowercased().contains("bf16")
+    }
+}
+
+@MainActor
+private func hasDownloadedVisionProjector(for model: AIModel) -> Bool {
+    guard model.modelFormat == .gguf, model.supportsVision else { return true }
+    return ModelData.models.contains { candidate in
+        candidate.isDependencyOnly
+            && candidate.inferenceFramework == model.inferenceFramework
+            && RunAnywhere.isModelDownloaded(candidate.id, framework: candidate.inferenceFramework)
+    }
+}
+
 @MainActor
 private func downloadableFeatureModels() -> [AIModel] {
     let legacyModelsDir: URL? = {
@@ -29,22 +258,41 @@ private func downloadableFeatureModels() -> [AIModel] {
         return documentsDir.appendingPathComponent("models")
     }()
 
+    func requiredFilesExist(in directory: URL, for model: AIModel) -> Bool {
+        guard !model.requiredFileNames.isEmpty else { return false }
+
+        let completionThreshold = 0.98
+        let minimumExpectedBytes = Int64(Double(model.sizeBytes) * completionThreshold)
+        var totalBytes: Int64 = 0
+
+        let allExist = model.requiredFileNames.allSatisfy { fileName in
+            let fileURL = directory.appendingPathComponent(fileName)
+            guard FileManager.default.fileExists(atPath: fileURL.path) else { return false }
+            let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.size] as? Int64 ?? 0
+            totalBytes += size
+            return true
+        }
+
+        return allExist && (minimumExpectedBytes <= 0 || totalBytes >= minimumExpectedBytes)
+    }
+
     var models = ModelData.models.filter { model in
         if model.isDependencyOnly { return false }
 
-        if RunAnywhere.isModelDownloaded(model.id, framework: model.inferenceFramework) {
+        if let runAnywhereDir = try? SimplifiedFileManager.shared.getModelFolderURL(
+            modelId: model.id,
+            framework: model.inferenceFramework
+        ),
+           FileManager.default.fileExists(atPath: runAnywhereDir.path),
+           requiredFilesExist(in: runAnywhereDir, for: model) {
             return true
         }
 
         guard let legacyModelsDir else { return false }
         let legacyModelDir = legacyModelsDir.appendingPathComponent(model.id)
         guard FileManager.default.fileExists(atPath: legacyModelDir.path) else { return false }
-        guard !model.requiredFileNames.isEmpty else { return false }
 
-        return model.requiredFileNames.allSatisfy { fileName in
-            let fileURL = legacyModelDir.appendingPathComponent(fileName)
-            return FileManager.default.fileExists(atPath: fileURL.path)
-        }
+        return requiredFilesExist(in: legacyModelDir, for: model)
     }
 
     if let appleModel = appleFoundationModelIfAvailable(),
@@ -234,7 +482,9 @@ private struct FeatureModelSettingsSheet: View {
     @Binding var isLoading: Bool
     @Binding var errorMessage: String?
     let supportsVisionToggle: Bool
+    let visionAvailableCheck: ((AIModel) -> Bool)?
     let writingMode: Binding<WritingAidMode>?
+    let modelFilter: ((AIModel) -> Bool)?
     let onLoad: () async -> Void
     let onUnload: () -> Void
 
@@ -259,7 +509,8 @@ private struct FeatureModelSettingsSheet: View {
     }
 
     private var selectedModelSupportsVision: Bool {
-        supportsVisionToggle && (selectedModel?.supportsVision == true)
+        guard supportsVisionToggle, let model = selectedModel, model.supportsVision else { return false }
+        return visionAvailableCheck?(model) ?? true
     }
 
     private var maxContextCap: Double {
@@ -425,7 +676,9 @@ private struct FeatureModelSettingsSheet: View {
         if !models.isEmpty { return }
         isRefreshingModels = true
         await syncRunAnywhereModelDiscovery()
-        let loaded = downloadableFeatureModels()
+        let loaded = downloadableFeatureModels().filter { model in
+            modelFilter?(model) ?? true
+        }
         models = loaded
         if selectedModelName.isEmpty || !loaded.contains(where: { $0.name == selectedModelName }) {
             selectedModelName = loaded.first?.name ?? ""
@@ -1303,7 +1556,9 @@ struct WritingAidScreen: View {
                 isLoading: $isLoading,
                 errorMessage: $errorMessage,
                 supportsVisionToggle: false,
+                visionAvailableCheck: nil,
                 writingMode: selectedModeBinding,
+                modelFilter: nil,
                 onLoad: { await ensureModelLoaded(force: true) },
                 onUnload: { llm.unloadModel() }
             )
@@ -1420,6 +1675,563 @@ struct WritingAidScreen: View {
                 errorMessage = error.localizedDescription
             }
             isProcessing = false
+            generationTask = nil
+        }
+    }
+}
+
+struct TranslatorScreen: View {
+    @EnvironmentObject var settings: AppSettings
+    @ObservedObject private var ttsManager = OnDeviceTtsManager.shared
+    @AppStorage("feature_translator_model_name") private var selectedModelName: String = ""
+    @AppStorage("feature_translator_max_tokens") private var maxTokens: Double = 2048
+    @AppStorage("feature_translator_enable_vision") private var enableVision: Bool = true
+    @AppStorage("feature_translator_source_lang") private var sourceLanguageCode: String = "en"
+    @AppStorage("feature_translator_target_lang") private var targetLanguageCode: String = "es"
+    @AppStorage("feature_translator_auto_detect") private var autoDetectSource: Bool = false
+    @State private var inputText: String = ""
+    @State private var outputText: String = ""
+    @State private var isLoading = false
+    @State private var isTranslating = false
+    @State private var showSettings = false
+    @State private var errorMessage: String?
+    @State private var selectedImageItem: PhotosPickerItem?
+    @State private var selectedImageURL: URL?
+    @State private var generationTask: Task<Void, Never>?
+
+    let onNavigateBack: () -> Void
+    let onNavigateToModels: () -> Void
+
+    @ObservedObject private var llm = LLMBackend.shared
+
+    private var selectedModel: AIModel? {
+        ModelData.models.first(where: { $0.name == selectedModelName && isTranslateGemmaModel($0) })
+    }
+
+    private var isCurrentModelLoaded: Bool {
+        llm.isLoaded && llm.currentlyLoadedModel == selectedModelName
+    }
+
+    private var sourceLanguage: TranslatorLanguage {
+        translatorLanguages.first(where: { $0.code == sourceLanguageCode })
+            ?? translatorLanguages.first(where: { $0.code == "en" })
+            ?? translatorLanguages[0]
+    }
+
+    private var targetLanguage: TranslatorLanguage {
+        translatorLanguages.first(where: { $0.code == targetLanguageCode })
+            ?? translatorLanguages.first(where: { $0.code == "es" })
+            ?? translatorLanguages[0]
+    }
+
+    private var sourceLanguageLabel: String {
+        autoDetectSource ? settings.localized("lang_auto_detect") : settings.localized(sourceLanguage.localizationKey)
+    }
+
+    private var targetLanguageLabel: String {
+        settings.localized(targetLanguage.localizationKey)
+    }
+
+    private var inputHasContent: Bool {
+        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedImageURL != nil
+    }
+
+    var body: some View {
+        Group {
+            if !isCurrentModelLoaded {
+                unloadedStateView
+            } else {
+                loadedStateView
+            }
+        }
+        .navigationTitle(settings.localized("translator_title"))
+        .navigationBarTitleDisplayMode(.inline)
+        .apolloScreenBackground()
+        .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    generationTask?.cancel()
+                    llm.unloadModel()
+                    onNavigateBack()
+                } label: {
+                    Image(systemName: "arrow.left")
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showSettings = true } label: { Image(systemName: "slider.horizontal.3") }
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            FeatureModelSettingsSheet(
+                selectedModelName: $selectedModelName,
+                maxTokens: $maxTokens,
+                enableThinking: .constant(false),
+                enableVision: $enableVision,
+                isLoading: $isLoading,
+                errorMessage: $errorMessage,
+                supportsVisionToggle: true,
+                visionAvailableCheck: translatorHasDownloadedVisionProjector,
+                writingMode: nil,
+                modelFilter: isTranslateGemmaModel,
+                onLoad: { await ensureModelLoaded(force: true) },
+                onUnload: { llm.unloadModel() }
+            )
+        }
+        .onChange(of: showSettings) { _, isPresented in
+            if !isPresented {
+                Task {
+                    await syncRunAnywhereModelDiscovery()
+                    let available = downloadableFeatureModels().filter(isTranslateGemmaModel)
+                    if selectedModelName.isEmpty || !available.contains(where: { $0.name == selectedModelName }) {
+                        selectedModelName = available.first?.name ?? ""
+                    }
+                }
+            }
+        }
+        .onAppear {
+            Task {
+                await syncRunAnywhereModelDiscovery()
+                let available = downloadableFeatureModels().filter(isTranslateGemmaModel)
+                if selectedModelName.isEmpty || !available.contains(where: { $0.name == selectedModelName }) {
+                    selectedModelName = available.first?.name ?? ""
+                }
+            }
+        }
+        .onChange(of: selectedImageItem) { _, item in
+            guard let item else { selectedImageURL = nil; return }
+            Task {
+                if let sourceURL = try? await item.loadTransferable(type: URL.self) {
+                    selectedImageURL = sourceURL
+                    inputText = ""
+                    return
+                }
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("jpg")
+                    try? data.write(to: temp)
+                    selectedImageURL = temp
+                    inputText = ""
+                }
+            }
+        }
+        .onChange(of: enableVision) { _, isEnabled in
+            if !isEnabled {
+                selectedImageItem = nil
+                selectedImageURL = nil
+            }
+        }
+        .onDisappear {
+            generationTask?.cancel()
+            llm.unloadModel()
+        }
+    }
+
+    private var unloadedStateView: some View {
+        let requiresDownload = downloadableFeatureModels().filter(isTranslateGemmaModel).isEmpty
+
+        return VStack(spacing: 12) {
+            Image(systemName: "network")
+                .font(.system(size: 48, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text(settings.localized(requiresDownload ? "translator_requires_gemma3n" : "scam_detector_load_model"))
+                .font(.title3.weight(.bold))
+                .multilineTextAlignment(.center)
+            Text(settings.localized("scam_detector_load_model_desc"))
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.7))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            Button {
+                if requiresDownload {
+                    onNavigateToModels()
+                } else {
+                    showSettings = true
+                }
+            } label: {
+                HStack {
+                    Spacer()
+                    Text(settings.localized(requiresDownload ? "download_models" : "feature_settings_title"))
+                    Spacer()
+                }
+                .frame(height: 50)
+                .contentShape(Rectangle())
+            }
+            .frame(maxWidth: 260)
+            .liquidGlassPrimaryButton(cornerRadius: 12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var loadedStateView: some View {
+        let hasSelectedImage = selectedImageURL != nil
+
+        return VStack(spacing: 14) {
+            languageBar
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(settings.localized("translator_input_label"))
+                    .font(.headline)
+
+                if let selectedImageURL,
+                   let uiImage = UIImage(contentsOfFile: selectedImageURL.path) {
+                    ZStack(alignment: .topTrailing) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxHeight: 220)
+                            .frame(maxWidth: .infinity)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                        Button {
+                            self.selectedImageItem = nil
+                            self.selectedImageURL = nil
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(.white, .black.opacity(0.5))
+                        }
+                        .padding(8)
+                    }
+                } else {
+                    TextEditor(text: $inputText)
+                        .frame(minHeight: 150)
+                        .padding(8)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.white.opacity(0.02))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+
+                HStack(spacing: 8) {
+                    Button {
+                        #if canImport(UIKit)
+                        if let clip = UIPasteboard.general.string, !clip.isEmpty {
+                            inputText += clip
+                            selectedImageItem = nil
+                            selectedImageURL = nil
+                        }
+                        #endif
+                    } label: {
+                        Image(systemName: "doc.on.clipboard")
+                            .font(.system(size: 18, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                    }
+                    .featureActionIconButtonStyle()
+
+                    Button {
+                        ttsManager.toggleSpeaking(
+                            inputText,
+                            fallbackLanguage: settings.selectedLanguage,
+                            key: "translator-input"
+                        )
+                    } label: {
+                        Image(systemName: ttsManager.isSpeaking(key: "translator-input") ? "stop.fill" : "speaker.wave.2")
+                            .font(.system(size: 18, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                    }
+                    .featureActionIconButtonStyle()
+                    .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                    if enableVision {
+                        PhotosPicker(selection: $selectedImageItem, matching: .images) {
+                            Image(systemName: hasSelectedImage ? "photo.badge.plus" : "photo")
+                                .font(.system(size: 18, weight: .semibold))
+                                .frame(width: 44, height: 44)
+                        }
+                        .foregroundStyle(.white)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.white.opacity(0.08))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.white.opacity(0.16), lineWidth: 1)
+                        )
+                    }
+
+                    Spacer()
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 12)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
+            )
+            .padding(.horizontal)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(settings.localized("translator_result"))
+                        .font(.headline)
+                    Text(outputText.isEmpty ? "-" : outputText)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: 140, alignment: .topLeading)
+                        .padding(10)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                    HStack(spacing: 8) {
+                        Spacer()
+
+                        Button {
+                            ttsManager.toggleSpeaking(
+                                outputText,
+                                fallbackLanguage: settings.selectedLanguage,
+                                key: "translator-output"
+                            )
+                        } label: {
+                            Image(systemName: ttsManager.isSpeaking(key: "translator-output") ? "stop.fill" : "speaker.wave.2")
+                                .font(.system(size: 18, weight: .semibold))
+                                .frame(width: 44, height: 44)
+                        }
+                        .featureActionIconButtonStyle()
+                        .disabled(outputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                        Button {
+                            #if canImport(UIKit)
+                            UIPasteboard.general.string = outputText
+                            #endif
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 18, weight: .semibold))
+                                .frame(width: 44, height: 44)
+                        }
+                        .featureActionIconButtonStyle()
+                        .disabled(outputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                .padding(.horizontal)
+            }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .foregroundColor(.red)
+                    .font(.caption)
+                    .padding(.horizontal)
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                toggleTranslate()
+            } label: {
+                HStack(spacing: 8) {
+                    if isTranslating {
+                        ProgressView()
+                            .tint(.white)
+                            .scaleEffect(0.85)
+                    } else {
+                        Image(systemName: "network")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    Text(settings.localized("translator_translate"))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+            }
+            .foregroundStyle(.white)
+            .liquidGlassPrimaryButton(cornerRadius: 12)
+            .disabled(isLoading || (!isTranslating && !inputHasContent))
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+        }
+    }
+
+    private var languageBar: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(settings.localized("translator_source_lang"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+
+                Menu {
+                    Button(settings.localized("lang_auto_detect")) {
+                        autoDetectSource = true
+                    }
+
+                    ForEach(translatorLanguages) { language in
+                        Button(settings.localized(language.localizationKey)) {
+                            autoDetectSource = false
+                            sourceLanguageCode = language.code
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Text(sourceLanguageLabel)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .padding(.horizontal, 12)
+                }
+                .featureActionIconButtonStyle(cornerRadius: 12)
+            }
+
+            Button {
+                let oldSource = sourceLanguageCode
+                sourceLanguageCode = targetLanguageCode
+                targetLanguageCode = oldSource
+            } label: {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 44, height: 44)
+            }
+            .featureActionIconButtonStyle(cornerRadius: 12)
+            .disabled(autoDetectSource)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(settings.localized("translator_target_lang"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+
+                Menu {
+                    ForEach(translatorLanguages) { language in
+                        Button(settings.localized(language.localizationKey)) {
+                            targetLanguageCode = language.code
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Text(targetLanguageLabel)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .padding(.horizontal, 12)
+                }
+                .featureActionIconButtonStyle(cornerRadius: 12)
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    private func englishName(for language: TranslatorLanguage) -> String {
+        translatorLanguageEnglishNames[language.code] ?? language.code
+    }
+
+    private func buildPrompt() -> String {
+        let trimmedInput = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let source = autoDetectSource ? nil : sourceLanguage
+        let targetName = englishName(for: targetLanguage)
+        let sourceName = source.map(englishName(for:))
+        let hasImage = selectedImageURL != nil && enableVision
+
+        switch (hasImage, source) {
+        case (true, nil):
+            return """
+            You are a professional translator.
+            Detect the language in the image and translate any text you see to \(targetName).
+            Provide only the translation without explaining the detected language.
+            If there's also text input: \(trimmedInput), translate that as well.
+            """
+        case (true, let source?):
+            let extraText = trimmedInput.isEmpty ? "" : "\nAlso translate this text: \(trimmedInput)"
+            return """
+            You are a professional translator.
+            Translate the text in the image from \(englishName(for: source)) to \(targetName).
+            Provide only the translation.\(extraText)
+            """
+        case (false, nil):
+            return """
+            You are a professional translator.
+            Detect the language of the following text and translate it to \(targetName).
+            Provide only the translation without explaining the detected language.
+
+            Text to translate:
+            \(trimmedInput)
+            """
+        case (false, let source?):
+            return """
+            You are a professional translator.
+            Translate the following text from \(sourceName ?? source.code) to \(targetName).
+            Provide only the translation.
+
+            Text to translate:
+            \(trimmedInput)
+            """
+        }
+    }
+
+    private func ensureModelLoaded(force: Bool) async {
+        guard let model = selectedModel else {
+            errorMessage = settings.localized("translator_requires_gemma3n")
+            return
+        }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        let modelContextCap = model.contextWindowSize > 0 ? model.contextWindowSize : 2048
+        let effectiveContext = min(max(1, Int(maxTokens)), modelContextCap)
+        llm.maxTokens = min(Int(maxTokens), effectiveContext)
+        llm.contextWindow = effectiveContext
+        llm.enableVision = enableVision
+        llm.enableAudio = false
+        llm.enableThinking = false
+
+        do {
+            if force || llm.currentlyLoadedModel != model.name {
+                try await llm.loadModel(model)
+            }
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func toggleTranslate() {
+        dismissKeyboard()
+
+        if isTranslating {
+            generationTask?.cancel()
+            generationTask = nil
+            isTranslating = false
+            return
+        }
+
+        generationTask = Task {
+            guard inputHasContent else { return }
+
+            if selectedImageURL != nil,
+               enableVision,
+               let model = selectedModel,
+               !translatorHasDownloadedVisionProjector(for: model) {
+                errorMessage = "Vision projector (mmproj) is missing for \(model.name)"
+                return
+            }
+
+            await ensureModelLoaded(force: false)
+            guard llm.isLoaded else { return }
+
+            isTranslating = true
+            outputText = ""
+
+            do {
+                let effectiveImageURL = enableVision ? selectedImageURL : nil
+                try await llm.generate(prompt: buildPrompt(), imageURL: effectiveImageURL) { text, _, _ in
+                    Task { @MainActor in
+                        outputText = sanitizeModelOutputText(text)
+                    }
+                }
+            } catch is CancellationError {
+                // User cancelled translation.
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+
+            isTranslating = false
             generationTask = nil
         }
     }
@@ -1674,7 +2486,9 @@ struct ScamDetectorScreen: View {
                 isLoading: $isLoading,
                 errorMessage: $errorMessage,
                 supportsVisionToggle: true,
+                visionAvailableCheck: hasDownloadedVisionProjector,
                 writingMode: nil,
+                modelFilter: nil,
                 onLoad: { await ensureModelLoaded(force: true) },
                 onUnload: { llm.unloadModel() }
             )
@@ -2583,7 +3397,9 @@ struct VibeCoderScreen: View {
                 isLoading: $isLoading,
                 errorMessage: $errorMessage,
                 supportsVisionToggle: false,
+                visionAvailableCheck: nil,
                 writingMode: nil,
+                modelFilter: nil,
                 onLoad: { await ensureModelLoaded(force: true) },
                 onUnload: { llm.unloadModel() }
             )

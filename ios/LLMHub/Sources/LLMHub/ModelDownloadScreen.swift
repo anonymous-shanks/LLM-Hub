@@ -724,8 +724,11 @@ struct ModelDownloadScreen: View {
             }
         }
         .onAppear {
-            vm.refreshStatuses()
-            vm.resumePendingDownloads()
+            Task {
+                try? await RunAnywhere.completeServicesInitialization()
+                vm.refreshStatuses()
+                vm.resumePendingDownloads()
+            }
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {

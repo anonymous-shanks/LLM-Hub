@@ -48,8 +48,35 @@ class LLMBackend: ObservableObject {
         }
     }
 
-    private func migrateLegacyModelIfNeeded(_ model: AIModel) throws -> Bool {
+    private func runAnywhereModelDirectory(for model: AIModel) -> URL? {
+        try? SimplifiedFileManager.shared.getModelFolderURL(modelId: model.id, framework: model.inferenceFramework)
+    }
+
+    private func isModelAvailableLocally(_ model: AIModel) -> Bool {
         if RunAnywhere.isModelDownloaded(model.id, framework: model.inferenceFramework) {
+            return true
+        }
+
+        if let runAnywhereDir = runAnywhereModelDirectory(for: model),
+           FileManager.default.fileExists(atPath: runAnywhereDir.path),
+           hasAllRequiredFiles(in: runAnywhereDir, for: model) {
+            return true
+        }
+
+        if let legacyDir = legacyModelDirectory(for: model),
+           FileManager.default.fileExists(atPath: legacyDir.path),
+           hasAllRequiredFiles(in: legacyDir, for: model) {
+            return true
+        }
+
+        return false
+    }
+
+    private func migrateLegacyModelIfNeeded(_ model: AIModel) throws -> Bool {
+        if isModelAvailableLocally(model),
+           let runAnywhereDir = runAnywhereModelDirectory(for: model),
+           FileManager.default.fileExists(atPath: runAnywhereDir.path),
+           hasAllRequiredFiles(in: runAnywhereDir, for: model) {
             return false
         }
 
@@ -193,7 +220,7 @@ class LLMBackend: ObservableObject {
         let candidates = ModelData.models.filter {
             $0.isDependencyOnly
                 && $0.inferenceFramework == model.inferenceFramework
-                && RunAnywhere.isModelDownloaded($0.id, framework: $0.inferenceFramework)
+                && isModelAvailableLocally($0)
         }
 
         let scored = candidates.compactMap { candidate -> (score: Int, path: String)? in
@@ -386,7 +413,7 @@ class LLMBackend: ObservableObject {
 
     private func registerModel(_ model: AIModel, contextLengthOverride: Int? = nil) {
         guard let primaryURL = URL(string: model.url) else { return }
-        _ = contextLengthOverride
+        let contextLength = contextLengthOverride ?? model.contextWindowSize
 
         if model.additionalFiles.isEmpty {
             RunAnywhere.registerModel(
@@ -453,8 +480,30 @@ class LLMBackend: ObservableObject {
             _ = await RunAnywhere.discoverDownloadedModels()
 
             // Only local load here. Downloads are handled by the model download screen.
-            guard RunAnywhere.isModelDownloaded(model.id, framework: model.inferenceFramework) else {
+            guard isModelAvailableLocally(model) else {
                 throw NSError(domain: "LLMBackend", code: -100, userInfo: [NSLocalizedDescriptionKey: "Model is not downloaded locally"])
+            }
+
+            // The C++ backend looks up context_length from the registry using the absolute
+            // file path as the identifier. Re-register the model under its absolute path so
+            // the C++ ID lookup succeeds and uses effectiveContext (e.g. 2048) instead of
+            // auto-detecting a larger value (e.g. 4096) which causes OOM on <8 GB devices.
+            if let folderURL = try? SimplifiedFileManager.shared.getModelFolderURL(
+                modelId: runAnywhereModelId,
+                framework: framework(for: model)
+            ), let ggufFile = listGGUFFiles(in: folderURL).first {
+                let pathModelInfo = ModelInfo(
+                    id: ggufFile.path,
+                    name: model.name,
+                    category: model.supportsVision ? .multimodal : .language,
+                    format: .gguf,
+                    framework: framework(for: model),
+                    downloadURL: URL(string: model.url),
+                    localPath: folderURL,
+                    contextLength: effectiveContext,
+                    supportsThinking: model.supportsThinking
+                )
+                try? await CppBridge.ModelRegistry.shared.save(pathModelInfo)
             }
 
             try await RunAnywhere.loadModel(runAnywhereModelId)

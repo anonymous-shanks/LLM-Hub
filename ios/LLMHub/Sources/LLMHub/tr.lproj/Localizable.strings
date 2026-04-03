@@ -43,7 +43,7 @@
 "about_llm_hub" = "LLM Hub Hakkında";
 "about_description" = "LLM Hub, Büyük Dil Modellerinin gücünü doğrudan mobil cihazınıza getiren açık kaynaklı bir Android uygulamasıdır. Gemma, Llama ve Phi gibi son teknoloji modellerle yapay zeka konuşmaları yaşayın - hepsi maksimum gizlilik ve çevrimdışı erişilebilirlik için telefonunuzda yerel olarak çalışıyor.";
 "key_features" = "Temel Özellikler";
-"feature_multiple_models" = "🤖 Çoklu LLM Modelleri: Gemma-3, Llama-3.2, Phi-4 ve Gemma-3n";
+"feature_multiple_models" = "🤖 Çoklu LLM Modelleri: Gemma-3, Llama-3.2, Phi-4 ve Translate Gemma";
 "feature_on_device" = "📱 Cihaz Üzerinde İşleme: Tam gizlilik, internet gerekmiyor";
 "feature_vision_support" = "🖼️ Görsel Desteği: Görselleri anlayan çoklu ortam modelleri";
 "feature_gpu_acceleration" = "⚡ GPU Hızlandırma: Desteklenen cihazlarda optimize edilmiş performans";
@@ -411,7 +411,7 @@
 "translator_auto_detect" = "Otomatik Algıla";
 "translator_translate" = "Çevir";
 "translator_result" = "Çeviri";
-"translator_requires_gemma3n" = "Bu özellik bir Gemma-3n modeli gerektirir. Lütfen Modeller ekranından bir tane indirin.";
+"translator_requires_gemma3n" = "Bu özellik bir Translate Gemma modeli gerektirir. Lütfen Modeller ekranından bir tane indirin.";
 "transcriber_title" = "Çevrimdışı Transkripsiyon";
 "transcriber_record" = "Ses Kaydet";
 "transcriber_upload" = "Ses Yükle";
@@ -419,7 +419,7 @@
 "transcriber_result" = "Transkripsiyon";
 "transcriber_recording" = "Kaydediliyor...";
 "transcriber_stop" = "Kaydı Durdur";
-"transcriber_requires_gemma3n" = "Bu özellik ses desteği olan bir Gemma-3n modeli gerektirir. Lütfen Modeller ekranından bir tane indirin.";
+"transcriber_requires_gemma3n" = "Bu özellik ses desteği olan bir Translate Gemma modeli gerektirir. Lütfen Modeller ekranından bir tane indirin.";
 "scam_detector_title" = "Dolandırıcılık Dedektörü";
 "scam_detector_input_label" = "Analiz edilecek içeriği girin";
 "scam_detector_input_hint" = "Dolandırıcılık analizi için metin yapıştırın, görsel yükleyin veya URL girin...";
@@ -563,7 +563,7 @@
 "model_loaded" = "Model başarıyla yüklendi";
 "model_loading" = "Model yükleniyor…";
 "model_load_failed" = "Model yüklenemedi";
-"multimodal_models_only" = "Yalnızca çoklu ortam (Gemma-3n) modelleri desteklenir";
+"multimodal_models_only" = "Yalnızca çoklu ortam (Translate Gemma) modelleri desteklenir";
 "text_models_only" = "Yalnızca metin modelleri desteklenir";
 "enable_audio_input" = "Ses girişini etkinleştir";
 "audio_input_enabled" = "Ses girişi etkin";
@@ -602,8 +602,8 @@
 "web_search_found_results" = "✅ %1$d sonuç bulundu. Analiz ediliyor...";
 "web_search_no_results" = "❌ Güncel arama sonucu bulunamadı. Eğitim verilerine dayalı yanıt sağlanıyor...";
 "web_search_failed" = "❌ Web araması başarısız: %1$@. Eğitim verilerine dayalı yanıt sağlanıyor...";
-"vision_chat_cannot_open" = "🚫 **Bu sohbet açılamıyor**\n\nBu konuşma görüntüler içeriyor, ancak şu anda **sadece metin modeli** yüklü:\n\n📱 **Mevcut model:** %1$@\n🖼️ **Bu sohbet:** Görüntüler içeriyor\n\n---\n\n## 🎯 Nasıl düzeltilir:\n\n1. **📥 Görü modeli indir**\n   - \"Modelleri İndir\"e git\n   - 🖼️ veya \"Görü+Metin\" ile işaretlenmiş modelleri ara\n   - Dene: **Gemma-3n E2B (Görü+Metin)**\n\n2. **🔄 Görü modeline geç**\n   - İndirdiğin görü modelini yükle\n   - Görü modelleri hem metin hem de görüntüleri işleyebilir\n\n3. **✅ Bu sohbete dön**\n   - Görü modeli yüklendikten sonra bu sohbet mükemmel çalışacak!\n\n---\n\n💡 **Pro ipucu:** Görü modelleri metin modellerinin yapabileceği her şeyi yapabilir, artı görüntüleri işleyebilir!";
-"vision_image_cannot_send" = "🖼️ **Görüntüler gönderilemiyor**\n\nBir görüntü göndermeye çalışıyorsun, ancak mevcut model **sadece metin**:\n\n📱 **Mevcut model:** %1$@\n\n---\n\n## 🎯 Görüntü göndermek için:\n\n1. **📥 Görü modeli indir**\n   - Menüye dokun → \"Modelleri İndir\"\n   - 🖼️ **Görü+Metin** modellerini ara\n   - Önerilen: **Gemma-3n E2B (Görü+Metin)**\n\n2. **🔄 Modelleri değiştir**\n   - İndirdiğin görü modelini yükle\n   - Görü modelleri hem metin hem de görüntüleri işler\n\n3. **✅ Tekrar dene**\n   - Yüklendikten sonra görüntüleri özgürce gönderebilirsin!\n\n---\n\n💡 **Pro ipucu:** Görü modelleri metin modellerinin yapabileceği her şeyi yapabilir, artı görüntüleri anlayabilir!";
+"vision_chat_cannot_open" = "🚫 **Bu sohbet açılamıyor**\n\nBu konuşma görüntüler içeriyor, ancak şu anda **sadece metin modeli** yüklü:\n\n📱 **Mevcut model:** %1$@\n🖼️ **Bu sohbet:** Görüntüler içeriyor\n\n---\n\n## 🎯 Nasıl düzeltilir:\n\n1. **📥 Görü modeli indir**\n   - \"Modelleri İndir\"e git\n   - 🖼️ veya \"Görü+Metin\" ile işaretlenmiş modelleri ara\n   - Dene: **Translate Gemma E2B (Görü+Metin)**\n\n2. **🔄 Görü modeline geç**\n   - İndirdiğin görü modelini yükle\n   - Görü modelleri hem metin hem de görüntüleri işleyebilir\n\n3. **✅ Bu sohbete dön**\n   - Görü modeli yüklendikten sonra bu sohbet mükemmel çalışacak!\n\n---\n\n💡 **Pro ipucu:** Görü modelleri metin modellerinin yapabileceği her şeyi yapabilir, artı görüntüleri işleyebilir!";
+"vision_image_cannot_send" = "🖼️ **Görüntüler gönderilemiyor**\n\nBir görüntü göndermeye çalışıyorsun, ancak mevcut model **sadece metin**:\n\n📱 **Mevcut model:** %1$@\n\n---\n\n## 🎯 Görüntü göndermek için:\n\n1. **📥 Görü modeli indir**\n   - Menüye dokun → \"Modelleri İndir\"\n   - 🖼️ **Görü+Metin** modellerini ara\n   - Önerilen: **Translate Gemma E2B (Görü+Metin)**\n\n2. **🔄 Modelleri değiştir**\n   - İndirdiğin görü modelini yükle\n   - Görü modelleri hem metin hem de görüntüleri işler\n\n3. **✅ Tekrar dene**\n   - Yüklendikten sonra görüntüleri özgürce gönderebilirsin!\n\n---\n\n💡 **Pro ipucu:** Görü modelleri metin modellerinin yapabileceği her şeyi yapabilir, artı görüntüleri anlayabilir!";
 "please_download_model" = "Sohbet etmeye başlamak için lütfen bir model indirin.";
 "model_not_loaded" = "Model düzgün yüklenmedi. Lütfen farklı bir modele geçmeyi deneyin veya uygulamayı yeniden başlatın.";
 "no_response_produced" = "Yanıt üretilmedi. (Muhtemel: token sınırı veya oturum sıfırlama). Yeniden Oluştur\'a dokunun.";

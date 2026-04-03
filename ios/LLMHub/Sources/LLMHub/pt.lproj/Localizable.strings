@@ -42,7 +42,7 @@
 "about_llm_hub" = "Sobre o LLM Hub";
 "about_description" = "LLM Hub é uma aplicação Android de código aberto que traz o poder dos Modelos de Linguagem Grande diretamente para o seu dispositivo móvel. Experimente conversas de IA com modelos de última geração como Gemma, Llama e Phi - todos executando localmente no seu telefone para máxima privacidade e acessibilidade offline.";
 "key_features" = "Recursos Principais";
-"feature_multiple_models" = "🤖 Múltiplos Modelos LLM: Gemma-3, Llama-3.2, Phi-4, e Gemma-3n";
+"feature_multiple_models" = "🤖 Múltiplos Modelos LLM: Gemma-3, Llama-3.2, Phi-4, e Translate Gemma";
 "feature_on_device" = "📱 Processamento no Dispositivo: Privacidade completa, não requer internet";
 "feature_vision_support" = "🖼️ Suporte a Visão: Modelos multimodais que entendem imagens";
 "feature_gpu_acceleration" = "⚡ Aceleração GPU: Performance otimizada em dispositivos suportados";
@@ -377,7 +377,7 @@
 "translator_auto_detect" = "Detectar Automaticamente";
 "translator_translate" = "Traduzir";
 "translator_result" = "Tradução";
-"translator_requires_gemma3n" = "Este recurso requer um modelo Gemma-3n. Por favor baixe um na tela de Modelos.";
+"translator_requires_gemma3n" = "Este recurso requer um modelo Translate Gemma. Por favor baixe um na tela de Modelos.";
 "transcriber_title" = "Transcritor Offline";
 "transcriber_record" = "Gravar Áudio";
 "transcriber_upload" = "Enviar Áudio";
@@ -385,7 +385,7 @@
 "transcriber_result" = "Transcrição";
 "transcriber_recording" = "Gravando...";
 "transcriber_stop" = "Parar Gravação";
-"transcriber_requires_gemma3n" = "Este recurso requer um modelo Gemma-3n com suporte de áudio. Por favor baixe um na tela de Modelos.";
+"transcriber_requires_gemma3n" = "Este recurso requer um modelo Translate Gemma com suporte de áudio. Por favor baixe um na tela de Modelos.";
 "scam_detector_title" = "Detector de Golpes";
 "scam_detector_input_label" = "Insira o conteúdo para analisar";
 "scam_detector_input_hint" = "Cole texto, envie uma imagem ou insira uma URL para analisar golpes...";
@@ -529,7 +529,7 @@
 "model_loaded" = "Modelo carregado com sucesso";
 "model_loading" = "Carregando modelo…";
 "model_load_failed" = "Falha ao carregar modelo";
-"multimodal_models_only" = "Apenas modelos multimodais (Gemma-3n) suportados";
+"multimodal_models_only" = "Apenas modelos multimodais (Translate Gemma) suportados";
 "text_models_only" = "Modelos somente de texto suportados";
 "enable_audio_input" = "Habilitar entrada de áudio";
 "audio_input_enabled" = "Entrada de áudio habilitada";
@@ -557,8 +557,8 @@
 "web_search_found_results" = "✅ Encontrados %1$d resultados. Analisando...";
 "web_search_no_results" = "❌ Nenhum resultado de pesquisa atual encontrado. Fornecendo resposta baseada em dados de treinamento...";
 "web_search_failed" = "❌ Pesquisa na web falhou: %1$@. Fornecendo resposta baseada em dados de treinamento...";
-"vision_chat_cannot_open" = "🚫 **Não é possível abrir este chat**\n\nEsta conversa contém imagens, mas você atualmente tem um **modelo apenas de texto** carregado:\n\n📱 **Modelo atual:** %1$@\n🖼️ **Este chat:** Contém imagens\n\n---\n\n## 🎯 Como corrigir:\n\n1. **📥 Baixar um modelo de visão**\n   - Vá para \"Baixar modelos\"\n   - Procure por modelos marcados com 🖼️ ou \"Visão+Texto\"\n   - Tente: **Gemma-3n E2B (Visão+Texto)**\n\n2. **🔄 Mudar para modelo de visão**\n   - Carregue o modelo de visão que você baixou\n   - Modelos de visão podem lidar com texto E imagens\n\n3. **✅ Voltar a este chat**\n   - Uma vez que um modelo de visão seja carregado, este chat funcionará perfeitamente!\n\n---\n\n💡 **Dica profissional:** Modelos de visão podem fazer tudo que modelos de texto fazem, mais lidar com imagens!";
-"vision_image_cannot_send" = "🖼️ **Não é possível enviar imagens**\n\nVocê está tentando enviar uma imagem, mas o modelo atual é **apenas texto**:\n\n📱 **Modelo atual:** %1$@\n\n---\n\n## 🎯 Para enviar imagens:\n\n1. **📥 Baixar um modelo de visão**\n   - Toque no menu → \"Baixar modelos\"\n   - Procure por modelos 🖼️ **Visão+Texto**\n   - Recomendado: **Gemma-3n E2B (Visão+Texto)**\n\n2. **🔄 Trocar modelos**\n   - Carregue o modelo de visão que você baixou\n   - Modelos de visão lidam com texto e imagens\n\n3. **✅ Tentar novamente**\n   - Uma vez carregado, você pode enviar imagens livremente!\n\n---\n\n💡 **Dica profissional:** Modelos de visão podem fazer tudo que modelos de texto fazem, mais entender imagens!";
+"vision_chat_cannot_open" = "🚫 **Não é possível abrir este chat**\n\nEsta conversa contém imagens, mas você atualmente tem um **modelo apenas de texto** carregado:\n\n📱 **Modelo atual:** %1$@\n🖼️ **Este chat:** Contém imagens\n\n---\n\n## 🎯 Como corrigir:\n\n1. **📥 Baixar um modelo de visão**\n   - Vá para \"Baixar modelos\"\n   - Procure por modelos marcados com 🖼️ ou \"Visão+Texto\"\n   - Tente: **Translate Gemma E2B (Visão+Texto)**\n\n2. **🔄 Mudar para modelo de visão**\n   - Carregue o modelo de visão que você baixou\n   - Modelos de visão podem lidar com texto E imagens\n\n3. **✅ Voltar a este chat**\n   - Uma vez que um modelo de visão seja carregado, este chat funcionará perfeitamente!\n\n---\n\n💡 **Dica profissional:** Modelos de visão podem fazer tudo que modelos de texto fazem, mais lidar com imagens!";
+"vision_image_cannot_send" = "🖼️ **Não é possível enviar imagens**\n\nVocê está tentando enviar uma imagem, mas o modelo atual é **apenas texto**:\n\n📱 **Modelo atual:** %1$@\n\n---\n\n## 🎯 Para enviar imagens:\n\n1. **📥 Baixar um modelo de visão**\n   - Toque no menu → \"Baixar modelos\"\n   - Procure por modelos 🖼️ **Visão+Texto**\n   - Recomendado: **Translate Gemma E2B (Visão+Texto)**\n\n2. **🔄 Trocar modelos**\n   - Carregue o modelo de visão que você baixou\n   - Modelos de visão lidam com texto e imagens\n\n3. **✅ Tentar novamente**\n   - Uma vez carregado, você pode enviar imagens livremente!\n\n---\n\n💡 **Dica profissional:** Modelos de visão podem fazer tudo que modelos de texto fazem, mais entender imagens!";
 "please_download_model" = "Por favor baixe um modelo para começar a conversar.";
 "model_not_loaded" = "Modelo não carregado corretamente. Tente trocar para um modelo diferente ou reiniciar o aplicativo.";
 "no_response_produced" = "Nenhuma resposta produzida. (Possível: limite de tokens ou reset de sessão). Toque em Regenerar.";

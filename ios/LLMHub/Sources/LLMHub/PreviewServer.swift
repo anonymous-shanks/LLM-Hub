@@ -18,7 +18,9 @@ public final class LocalHTMLPreviewServer: @unchecked Sendable {
         stop()
         self.html = html
         
-        let listener = try NWListener(using: .tcp, on: .any)
+        let params = NWParameters.tcp
+        params.requiredInterfaceType = .loopback
+        let listener = try NWListener(using: params, on: .any)
         self.listener = listener
         
         listener.newConnectionHandler = { connection in

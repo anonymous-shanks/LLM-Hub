@@ -414,7 +414,14 @@ bool LlamaCppTextGeneration::unload_model() {
 }
 
 std::string LlamaCppTextGeneration::build_prompt(const TextGenerationRequest& request) {
+    static const std::string kRawPromptPrefix = "__RAW_PROMPT__\n";
     std::vector<std::pair<std::string, std::string>> messages;
+
+    if (!request.prompt.empty() && request.prompt.rfind(kRawPromptPrefix, 0) == 0) {
+        std::string raw_prompt = request.prompt.substr(kRawPromptPrefix.size());
+        LOGI("Using raw preformatted prompt, length: %zu", raw_prompt.length());
+        return raw_prompt;
+    }
 
     if (!request.messages.empty()) {
         messages = request.messages;
@@ -483,15 +490,29 @@ std::string LlamaCppTextGeneration::apply_chat_template(
     }
 
     if (result < 0) {
-        LOGI("Chat template failed (result=%d), using simple fallback format", result);
-        std::string fallback;
-        for (const auto& msg : chat_messages) {
-            fallback += std::string(msg.role) + ": " + msg.content + "\n";
+        // The model's embedded template failed (e.g. TranslateGemma requires structured
+        // content dicts that llama.cpp can't pass via llama_chat_message). Fall back to
+        // llama.cpp's built-in auto-detected template (nullptr) which correctly handles
+        // Gemma3 and other common architectures instead of the broken "role: text" format.
+        LOGI("Model template failed (result=%d), retrying with llama.cpp auto-detect template", result);
+        try {
+            result = llama_chat_apply_template(nullptr, chat_messages.data(), chat_messages.size(),
+                                               add_assistant_token, formatted.data(), formatted.size());
+        } catch (...) {
+            result = -1;
         }
-        if (add_assistant_token) {
-            fallback += "assistant: ";
+        if (result < 0) {
+            // Last-resort: basic role: content fallback
+            LOGI("Auto-detect template also failed, using basic text fallback");
+            std::string fallback;
+            for (const auto& msg : chat_messages) {
+                fallback += std::string(msg.role) + ": " + msg.content + "\n";
+            }
+            if (add_assistant_token) {
+                fallback += "assistant: ";
+            }
+            return fallback;
         }
-        return fallback;
     }
 
     if (result > (int32_t)formatted.size()) {
@@ -501,14 +522,23 @@ std::string LlamaCppTextGeneration::apply_chat_template(
                                                add_assistant_token, formatted.data(), formatted.size());
         } catch (...) {
             LOGE("llama_chat_apply_template threw exception on retry");
-            std::string fallback;
-            for (const auto& msg : chat_messages) {
-                fallback += std::string(msg.role) + ": " + msg.content + "\n";
+            // Try auto-detect as secondary fallback
+            try {
+                result = llama_chat_apply_template(nullptr, chat_messages.data(), chat_messages.size(),
+                                                   add_assistant_token, formatted.data(), formatted.size());
+            } catch (...) {
+                result = -1;
             }
-            if (add_assistant_token) {
-                fallback += "assistant: ";
+            if (result < 0) {
+                std::string fallback;
+                for (const auto& msg : chat_messages) {
+                    fallback += std::string(msg.role) + ": " + msg.content + "\n";
+                }
+                if (add_assistant_token) {
+                    fallback += "assistant: ";
+                }
+                return fallback;
             }
-            return fallback;
         }
     }
 

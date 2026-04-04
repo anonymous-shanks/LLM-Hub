@@ -37,7 +37,7 @@ import Foundation
 //   ./scripts/build-swift.sh --set-remote  (sets useLocalBinaries = false)
 //
 // =============================================================================
-let useLocalBinaries = true //  Toggle: true for local dev, false for release
+let useLocalBinaries = false //  Toggle: true for local dev, false for release
 
 // Version for remote XCFrameworks (used when testLocal = false)
 // Updated automatically by CI/CD during releases
@@ -219,12 +219,12 @@ func binaryTargets() -> [Target] {
             .binaryTarget(
                 name: "RACommonsBinary",
                 url: "https://github.com/timmyy123/LLM-Hub/releases/download/ios-sdk-v\(sdkVersion)-patched/RACommons-v\(sdkVersion).zip",
-                checksum: "b46d1de418781763091535b03735250593a7c958ffc4e72fe145504ed1750c4a"
+                checksum: "3b70009fc188c7e86c3a973fd365ff782f67c7b4b67da0d844b9f880cef97eb9"
             ),
             .binaryTarget(
                 name: "RABackendLlamaCPPBinary",
                 url: "https://github.com/timmyy123/LLM-Hub/releases/download/ios-sdk-v\(sdkVersion)-patched/RABackendLLAMACPP-v\(sdkVersion).zip",
-                checksum: "cb0d5cea3439d8100ab1991c56afee6271fe04679446a5522a59ee175b94145d"
+                checksum: "95dcdca4f1ff65ecbb3553dcb6b1adce76af92e4df55cabf4f07dd0823dea8e8"
             ),
         ]
 

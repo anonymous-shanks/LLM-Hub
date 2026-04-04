@@ -228,6 +228,7 @@ struct ChatSettingsSheet: View {
 
         var models = ModelData.models.filter { model in
             if model.isDependencyOnly { return false }
+            if model.name.hasPrefix("Translate Gemma") { return false }
 
             if RunAnywhere.isModelDownloaded(model.id, framework: model.inferenceFramework) {
                 return true

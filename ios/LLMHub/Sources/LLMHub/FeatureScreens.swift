@@ -365,6 +365,12 @@ private func sanitizeModelOutputText(_ text: String) -> String {
         .replacingOccurrences(of: "â€“", with: "-")
         .replacingOccurrences(of: "â€”", with: "-")
         .replacingOccurrences(of: "�", with: "'")
+    .replacingOccurrences(of: "<|im_start|>assistant", with: "")
+    .replacingOccurrences(of: "<|im_end|>", with: "")
+    .replacingOccurrences(of: "<start_of_turn>model", with: "")
+    .replacingOccurrences(of: "<start_of_turn>user", with: "")
+    .replacingOccurrences(of: "<end_of_turn>", with: "")
+    .trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
 #if canImport(Network)
@@ -382,7 +388,9 @@ private final class FeatureLocalHTMLPreviewServer {
     func start(html: String) async throws -> URL {
         stop()
 
-        let listener = try NWListener(using: .tcp, on: .any)
+        let params = NWParameters.tcp
+        params.requiredInterfaceType = .loopback
+        let listener = try NWListener(using: params, on: .any)
         self.listener = listener
 
         listener.newConnectionHandler = { connection in
@@ -1698,6 +1706,7 @@ struct TranslatorScreen: View {
     @State private var selectedImageItem: PhotosPickerItem?
     @State private var selectedImageURL: URL?
     @State private var generationTask: Task<Void, Never>?
+    @State private var availableTranslatorModels: [AIModel] = []
 
     let onNavigateBack: () -> Void
     let onNavigateToModels: () -> Void
@@ -1784,6 +1793,7 @@ struct TranslatorScreen: View {
                 Task {
                     await syncRunAnywhereModelDiscovery()
                     let available = downloadableFeatureModels().filter(isTranslateGemmaModel)
+                    availableTranslatorModels = available
                     if selectedModelName.isEmpty || !available.contains(where: { $0.name == selectedModelName }) {
                         selectedModelName = available.first?.name ?? ""
                     }
@@ -1794,6 +1804,7 @@ struct TranslatorScreen: View {
             Task {
                 await syncRunAnywhereModelDiscovery()
                 let available = downloadableFeatureModels().filter(isTranslateGemmaModel)
+                availableTranslatorModels = available
                 if selectedModelName.isEmpty || !available.contains(where: { $0.name == selectedModelName }) {
                     selectedModelName = available.first?.name ?? ""
                 }
@@ -1828,7 +1839,7 @@ struct TranslatorScreen: View {
     }
 
     private var unloadedStateView: some View {
-        let requiresDownload = downloadableFeatureModels().filter(isTranslateGemmaModel).isEmpty
+        let requiresDownload = availableTranslatorModels.isEmpty
 
         return VStack(spacing: 12) {
             Image(systemName: "network")
@@ -2121,47 +2132,71 @@ struct TranslatorScreen: View {
         translatorLanguageEnglishNames[language.code] ?? language.code
     }
 
+    private func rawTranslateGemmaPrompt(source: TranslatorLanguage?, target: TranslatorLanguage, text: String) -> String {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let targetName = englishName(for: target)
+        let targetCode = target.code.replacingOccurrences(of: "_", with: "-")
+
+        let promptBody: String
+        if let source {
+            let sourceName = englishName(for: source)
+            let sourceCode = source.code.replacingOccurrences(of: "_", with: "-")
+            promptBody = """
+            <start_of_turn>user
+            You are a professional \(sourceName) (\(sourceCode)) to \(targetName) (\(targetCode)) translator. Your goal is to accurately convey the meaning and nuances of the original \(sourceName) text while adhering to \(targetName) grammar, vocabulary, and cultural sensitivities.
+            Produce only the \(targetName) translation, without any additional explanations or commentary. Please translate the following \(sourceName) text into \(targetName):
+
+
+            \(trimmedText)<end_of_turn>
+            <start_of_turn>model
+            """
+        } else {
+            promptBody = """
+            <start_of_turn>user
+            You are a professional translator. Detect the source language of the text, then accurately translate it into \(targetName) (\(targetCode)) while preserving meaning and nuance.
+            Produce only the \(targetName) translation, without any additional explanations or commentary. Please translate the following text into \(targetName):
+
+
+            \(trimmedText)<end_of_turn>
+            <start_of_turn>model
+            """
+        }
+
+        return "__RAW_PROMPT__\n" + promptBody
+    }
+
     private func buildPrompt() -> String {
         let trimmedInput = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         let source = autoDetectSource ? nil : sourceLanguage
+        let targetCode = targetLanguage.code.replacingOccurrences(of: "_", with: "-")
         let targetName = englishName(for: targetLanguage)
-        let sourceName = source.map(englishName(for:))
+
+        // Build the exact user-turn content that matches TranslateGemma's chat template output.
+        // The GGUF Jinja template generates:
+        //   "You are a professional {src} ({src_code}) to {tgt} ({tgt_code}) translator. Your goal
+        //    is to accurately convey the meaning and nuances of the original {src} text while
+        //    adhering to {tgt} grammar, vocabulary, and cultural sensitivities.\n
+        //    Produce only the {tgt} translation, without any additional explanations or commentary.
+        //    Please translate the following {src} text into {tgt}:\n\n\n{text}"
+        // (source is omitted / auto when nil → we use a neutral fallback)
+
         let hasImage = selectedImageURL != nil && enableVision
 
-        switch (hasImage, source) {
-        case (true, nil):
-            return """
-            You are a professional translator.
-            Detect the language in the image and translate any text you see to \(targetName).
-            Provide only the translation without explaining the detected language.
-            If there's also text input: \(trimmedInput), translate that as well.
-            """
-        case (true, let source?):
-            let extraText = trimmedInput.isEmpty ? "" : "\nAlso translate this text: \(trimmedInput)"
-            return """
-            You are a professional translator.
-            Translate the text in the image from \(englishName(for: source)) to \(targetName).
-            Provide only the translation.\(extraText)
-            """
-        case (false, nil):
-            return """
-            You are a professional translator.
-            Detect the language of the following text and translate it to \(targetName).
-            Provide only the translation without explaining the detected language.
-
-            Text to translate:
-            \(trimmedInput)
-            """
-        case (false, let source?):
-            return """
-            You are a professional translator.
-            Translate the following text from \(sourceName ?? source.code) to \(targetName).
-            Provide only the translation.
-
-            Text to translate:
-            \(trimmedInput)
-            """
+        if hasImage {
+            // Image translation: let SDK pass the image prompt; source/target already declared
+            let srcPart: String
+            if let source = source {
+                let srcName = englishName(for: source)
+                let srcCode = source.code.replacingOccurrences(of: "_", with: "-")
+                srcPart = "You are a professional \(srcName) (\(srcCode)) to \(targetName) (\(targetCode)) translator. Your goal is to accurately convey the meaning and nuances of the original \(srcName) text while adhering to \(targetName) grammar, vocabulary, and cultural sensitivities.\nPlease translate the \(srcName) text in the provided image into \(targetName). Produce only the \(targetName) translation, without any additional explanations, alternatives or commentary. Focus only on the text, do not output where the text is located, surrounding objects or any other explanation about the picture. Ignore symbols, pictogram, and arrows!"
+            } else {
+                srcPart = "You are a professional translator. Your goal is to accurately convey the meaning and nuances of the original text while adhering to \(targetName) grammar, vocabulary, and cultural sensitivities.\nPlease translate the text in the provided image into \(targetName). Produce only the \(targetName) translation, without any additional explanations, alternatives or commentary. Focus only on the text, do not output where the text is located, surrounding objects or any other explanation about the picture. Ignore symbols, pictogram, and arrows!"
+            }
+            let extra = trimmedInput.isEmpty ? "" : "\n\(trimmedInput)"
+            return srcPart + extra
         }
+
+        return rawTranslateGemmaPrompt(source: source, target: targetLanguage, text: trimmedInput)
     }
 
     private func ensureModelLoaded(force: Bool) async {
@@ -2177,6 +2212,8 @@ struct TranslatorScreen: View {
         let effectiveContext = min(max(1, Int(maxTokens)), modelContextCap)
         llm.maxTokens = min(Int(maxTokens), effectiveContext)
         llm.contextWindow = effectiveContext
+        llm.temperature = 0.2
+        llm.topP = 0.8
         llm.enableVision = enableVision
         llm.enableAudio = false
         llm.enableThinking = false
@@ -2220,7 +2257,12 @@ struct TranslatorScreen: View {
 
             do {
                 let effectiveImageURL = enableVision ? selectedImageURL : nil
-                try await llm.generate(prompt: buildPrompt(), imageURL: effectiveImageURL) { text, _, _ in
+                try await llm.generate(
+                    prompt: buildPrompt(),
+                    imageURL: effectiveImageURL,
+                    maxTokensOverride: 512,
+                    stopSequences: ["<end_of_turn>", "<start_of_turn>", "<|im_start|>", "<|im_end|>"]
+                ) { text, _, _ in
                     Task { @MainActor in
                         outputText = sanitizeModelOutputText(text)
                     }

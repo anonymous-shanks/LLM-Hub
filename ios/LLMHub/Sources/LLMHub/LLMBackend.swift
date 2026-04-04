@@ -540,6 +540,9 @@ class LLMBackend: ObservableObject {
         prompt: String,
         imageURL: URL? = nil,
         audioURL: URL? = nil,
+        systemPrompt: String? = nil,
+        maxTokensOverride: Int? = nil,
+        stopSequences: [String] = [],
         onUpdate: @escaping (String, Int, Double) -> Void
     ) async throws {
         _ = imageURL
@@ -548,6 +551,7 @@ class LLMBackend: ObservableObject {
         try await ensureSDKReady()
 
         let effectiveMaxTokens: Int = {
+            if let override = maxTokensOverride { return max(1, override) }
             if let model = loadedAIModel() {
                 let effectiveContext = clampedContextWindow(contextWindow, for: model)
                 return min(max(1, maxTokens), effectiveContext)
@@ -559,7 +563,9 @@ class LLMBackend: ObservableObject {
             maxTokens: effectiveMaxTokens,
             temperature: temperature,
             topP: topP,
-            streamingEnabled: true
+            stopSequences: stopSequences,
+            streamingEnabled: true,
+            systemPrompt: systemPrompt
         )
 
         if let imageURL,

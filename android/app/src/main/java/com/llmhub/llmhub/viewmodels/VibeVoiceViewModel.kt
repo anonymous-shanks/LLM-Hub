@@ -7,7 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.llmhub.llmhub.data.LLMModel
 import com.llmhub.llmhub.data.ModelAvailabilityProvider
-import com.llmhub.llmhub.inference.MediaPipeInferenceService
+import com.llmhub.llmhub.inference.InferenceService
 import com.llmhub.llmhub.utils.AudioConversionUtils
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
@@ -41,7 +41,7 @@ class VibeVoiceViewModel(application: Application) : AndroidViewModel(applicatio
         private const val VOICE_FALLBACK_REPLY = "I heard you, but I missed part of that. Could you repeat it briefly?"
     }
 
-    private val inferenceService = MediaPipeInferenceService(application)
+    private val inferenceService = (application as com.llmhub.llmhub.LlmHubApplication).inferenceService
     private val prefs = application.getSharedPreferences("vibevoice_prefs", android.content.Context.MODE_PRIVATE)
 
     data class VoiceTurn(

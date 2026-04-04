@@ -465,17 +465,7 @@ class MediaPipeInferenceService(private val applicationContext: Context) : Infer
             }
             
             // Determine backend - use preferred backend if provided, otherwise use model's GPU support
-            // NOTE: Gemma-4 (litertlm format) GPU decode crashes on tasks-genai due to missing
-            // libLiteRtTopKOpenClSampler.so (known bug, fixed in litertlm-android 0.10.1 not yet on Maven).
-            // Force CPU for litertlm models to avoid the crash until the fix ships.
-            val isLitertlm = model.modelFormat == "litertlm"
-            val effectiveBackend = if (isLitertlm && preferredBackend == LlmInference.Backend.GPU) {
-                Log.w(TAG, "GPU backend requested for litertlm model ${model.name} but tasks-genai has a known GPU decode bug — forcing CPU")
-                LlmInference.Backend.CPU
-            } else {
-                preferredBackend ?: if (model.supportsGpu) LlmInference.Backend.GPU else LlmInference.Backend.CPU
-            }
-            val backend = effectiveBackend
+            val backend = preferredBackend ?: if (model.supportsGpu) LlmInference.Backend.GPU else LlmInference.Backend.CPU
             
             Log.d(TAG, "Selected backend: $backend for model: ${modelFile.name} ${if (preferredBackend != null) "(user preference)" else "(auto-selected)"}")
             

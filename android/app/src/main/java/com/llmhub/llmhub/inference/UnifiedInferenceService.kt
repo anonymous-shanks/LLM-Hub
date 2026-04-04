@@ -14,6 +14,7 @@ import javax.inject.Inject
 class UnifiedInferenceService(private val context: Context) : InferenceService {
 
     private val mediaPipeService = MediaPipeInferenceService(context)
+    private val liteRtLmService = LiteRtLmInferenceService(context)
     private val onnxService = OnnxInferenceService(context)
     private val nexaService = NexaInferenceService(context)
     
@@ -28,6 +29,7 @@ class UnifiedInferenceService(private val context: Context) : InferenceService {
         val targetService = when (model.modelFormat) {
             "onnx" -> onnxService
             "gguf" -> nexaService
+            "litertlm" -> liteRtLmService
             else -> mediaPipeService
         }
 
@@ -79,6 +81,7 @@ class UnifiedInferenceService(private val context: Context) : InferenceService {
         val targetService = when (model.modelFormat) {
             "onnx" -> onnxService
             "gguf" -> nexaService
+            "litertlm" -> liteRtLmService
             else -> mediaPipeService
         }
 
@@ -148,6 +151,7 @@ class UnifiedInferenceService(private val context: Context) : InferenceService {
 
     override suspend fun onCleared() {
         mediaPipeService.onCleared()
+        liteRtLmService.onCleared()
         onnxService.onCleared()
         if ((nexaService as? com.llmhub.llmhub.inference.NexaInferenceService)?.isAvailable() == true) {
             nexaService.onCleared()
@@ -172,6 +176,7 @@ class UnifiedInferenceService(private val context: Context) : InferenceService {
 
     override fun setGenerationParameters(maxTokens: Int?, topK: Int?, topP: Float?, temperature: Float?, nGpuLayers: Int?, enableThinking: Boolean?, contextWindow: Int?) {
         mediaPipeService.setGenerationParameters(maxTokens, topK, topP, temperature, nGpuLayers, enableThinking, contextWindow)
+        liteRtLmService.setGenerationParameters(maxTokens, topK, topP, temperature, nGpuLayers, enableThinking, contextWindow)
         onnxService.setGenerationParameters(maxTokens, topK, topP, temperature, nGpuLayers, enableThinking, contextWindow)
         if ((nexaService as? com.llmhub.llmhub.inference.NexaInferenceService)?.isAvailable() == true) {
             nexaService.setGenerationParameters(maxTokens, topK, topP, temperature, nGpuLayers, enableThinking, contextWindow)
@@ -194,6 +199,7 @@ class UnifiedInferenceService(private val context: Context) : InferenceService {
         return when (model.modelFormat) {
             "onnx" -> onnxService.getEffectiveMaxTokens(model)
             "gguf" -> if ((nexaService as? com.llmhub.llmhub.inference.NexaInferenceService)?.isAvailable() == true) nexaService.getEffectiveMaxTokens(model) else mediaPipeService.getEffectiveMaxTokens(model)
+            "litertlm" -> liteRtLmService.getEffectiveMaxTokens(model)
             else -> mediaPipeService.getEffectiveMaxTokens(model)
         }
     }

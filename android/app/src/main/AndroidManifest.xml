@@ -43,7 +43,8 @@
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="${admobAppId}"/>
         
-        <!-- OpenCL libraries for MediaPipe Image Generator (Android 12+) -->
+        <!-- OpenCL libraries for MediaPipe Image Generator and LiteRT-LM (Android 12+) -->
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
         <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <uses-native-library android:name="libOpenCL-car.so" android:required="false"/>
         <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />

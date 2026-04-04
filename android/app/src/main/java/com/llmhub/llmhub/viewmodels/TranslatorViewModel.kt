@@ -10,7 +10,7 @@ import com.llmhub.llmhub.data.LLMModel
 import com.llmhub.llmhub.data.ModelAvailabilityProvider
 import com.llmhub.llmhub.screens.Language
 import com.llmhub.llmhub.screens.languageCodeToEnglishName
-import com.llmhub.llmhub.inference.MediaPipeInferenceService
+import com.llmhub.llmhub.inference.InferenceService
 import com.llmhub.llmhub.utils.AudioConversionUtils
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import java.util.UUID
@@ -25,7 +25,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 
 class TranslatorViewModel(application: Application) : AndroidViewModel(application) {
-    private val inferenceService = MediaPipeInferenceService(application)
+    private val inferenceService = (application as com.llmhub.llmhub.LlmHubApplication).inferenceService
     private val prefs = application.getSharedPreferences("translator_prefs", android.content.Context.MODE_PRIVATE)
     
     // Model selection state

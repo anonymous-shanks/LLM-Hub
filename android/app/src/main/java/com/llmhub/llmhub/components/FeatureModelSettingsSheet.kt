@@ -84,6 +84,7 @@ fun FeatureModelSettingsSheet(
     val baseMaxTokensCap = remember(selectedModel) {
         selectedModel?.let { MediaPipeInferenceService.getMaxTokensForModelStatic(it) } ?: 2048
     }
+    val isLiteRtLm = remember(selectedModel) { selectedModel?.modelFormat == "litertlm" }
     val isPhi4Mini = remember(selectedModel) {
         selectedModel?.name?.contains("Phi-4 Mini", ignoreCase = true) == true
     }
@@ -454,8 +455,12 @@ fun FeatureModelSettingsSheet(
                             color = MaterialTheme.colorScheme.primary
                         )
 
+                        // Context window (litertlm) / Max tokens (others)
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                            Text(text = stringResource(R.string.max_tokens), style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                text = if (isLiteRtLm) stringResource(R.string.context_window_size) else stringResource(R.string.max_tokens),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "${baseMaxTokensCap} ${stringResource(R.string.max)}",

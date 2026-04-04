@@ -78,6 +78,7 @@ fun WritingAidScreen(
     var maxTokensText by remember(maxTokensValue) { mutableStateOf(maxTokensValue.toString()) }
     var gpuLayers by remember(selectedNGpuLayers) { mutableStateOf(selectedNGpuLayers ?: 999) }
     val isGguf by remember(selectedModel) { derivedStateOf { selectedModel?.modelFormat == "gguf" } }
+    val isLiteRtLm by remember(selectedModel) { derivedStateOf { selectedModel?.modelFormat == "litertlm" } }
     val isThinkingOrHarmonyModel by remember(selectedModel) {
         derivedStateOf {
             val name = selectedModel?.name?.lowercase() ?: ""
@@ -156,7 +157,7 @@ fun WritingAidScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Max Tokens slider
+                // Context Window (litertlm) / Max Tokens (others) slider
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -170,7 +171,10 @@ fun WritingAidScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                            Text(text = stringResource(R.string.max_tokens), style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                text = if (isLiteRtLm) stringResource(R.string.context_window_size) else stringResource(R.string.max_tokens),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "$baseMaxTokensCap ${stringResource(R.string.max)}",

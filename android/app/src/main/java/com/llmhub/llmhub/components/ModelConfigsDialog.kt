@@ -62,6 +62,7 @@ fun ModelConfigsDialog(
     val isGemma3nE2B = model.name.contains("Gemma-3n E2B", ignoreCase = true)
     val isGemma3nE4B = model.name.contains("Gemma-3n E4B", ignoreCase = true)
     val isGemma3nModel = isGemma3nE2B || isGemma3nE4B
+    val isLiteRtLm = model.modelFormat == "litertlm"
 
     // Phi-4 Mini detection: supports GPU on devices with sufficient memory
     val isPhi4Mini = model.name.contains("Phi-4 Mini", ignoreCase = true)
@@ -143,9 +144,12 @@ fun ModelConfigsDialog(
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                 )
 
-                // Max tokens (label row with cap next to label, slider row below takes full width)
+                // Context Window (litertlm) / Max tokens (others)
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text(text = stringResource(R.string.max_tokens), style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = if (isLiteRtLm) stringResource(R.string.context_window_size) else stringResource(R.string.max_tokens),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(text = "${maxTokensCap} ${stringResource(R.string.max)}", style = MaterialTheme.typography.bodySmall)
                 }
@@ -189,7 +193,6 @@ fun ModelConfigsDialog(
                         modifier = Modifier.width(smallNumWidth)
                     )
                 }
-
                 // TopK
                 Text(text = stringResource(R.string.top_k), style = MaterialTheme.typography.bodyMedium)
                 Row(verticalAlignment = Alignment.CenterVertically) {

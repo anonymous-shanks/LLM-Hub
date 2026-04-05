@@ -26,10 +26,11 @@ class UnifiedInferenceService(private val context: Context) : InferenceService {
         if (model.modelFormat == "gguf" && (nexaService as? com.llmhub.llmhub.inference.NexaInferenceService)?.isAvailable() != true) {
             throw AllBackendsFailedException("GGUF models require the Nexa SDK which is not available on this device")
         }
+        val isGemma4 = model.name.contains("Gemma-4", ignoreCase = true)
         val targetService = when (model.modelFormat) {
             "onnx" -> onnxService
             "gguf" -> nexaService
-            "litertlm" -> liteRtLmService
+            "litertlm" -> if (isGemma4) liteRtLmService else mediaPipeService
             else -> mediaPipeService
         }
 
@@ -80,10 +81,11 @@ class UnifiedInferenceService(private val context: Context) : InferenceService {
         if (model.modelFormat == "gguf" && (nexaService as? com.llmhub.llmhub.inference.NexaInferenceService)?.isAvailable() != true) {
             throw AllBackendsFailedException("GGUF models require the Nexa SDK which is not available on this device")
         }
+        val isGemma4 = model.name.contains("Gemma-4", ignoreCase = true)
         val targetService = when (model.modelFormat) {
             "onnx" -> onnxService
             "gguf" -> nexaService
-            "litertlm" -> liteRtLmService
+            "litertlm" -> if (isGemma4) liteRtLmService else mediaPipeService
             else -> mediaPipeService
         }
 

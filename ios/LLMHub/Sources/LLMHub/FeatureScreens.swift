@@ -190,7 +190,22 @@ private func isTranslateGemmaModel(_ model: AIModel) -> Bool {
 
 @MainActor
 private func downloadableTranslatorModels() -> [AIModel] {
-    downloadableFeatureModels().filter(isTranslateGemmaModel)
+    downloadableFeatureModels().filter(isTranslatorSupportedModel)
+}
+
+private func isTranslatorSupportedModel(_ model: AIModel) -> Bool {
+    !model.isDependencyOnly
+        && model.category == .multimodal
+        && model.supportsVision
+        && (model.name.hasPrefix("Translate Gemma 4B") || model.name.hasPrefix("Gemma 4 "))
+}
+
+private func usesGemma4TurnTemplate(_ model: AIModel) -> Bool {
+    model.name.hasPrefix("Translate Gemma 4B") || model.name.hasPrefix("Gemma 4 ")
+}
+
+private func isNonTranslatorFeatureModel(_ model: AIModel) -> Bool {
+    !model.name.hasPrefix("Translate Gemma")
 }
 
 private func translatorQuantizationTag(for modelName: String) -> String? {
@@ -229,6 +244,12 @@ private func translatorHasDownloadedVisionProjector(for model: AIModel) -> Bool 
     }
 
     guard !candidates.isEmpty else { return false }
+
+    if family.hasPrefix("gemma 4 e") {
+        return candidates.contains {
+            $0.name.lowercased().contains("f16") || $0.url.lowercased().contains("f16")
+        }
+    }
 
     if quantTag == "f16" {
         return candidates.contains { ($0.name.lowercased().contains("f16") || $0.url.lowercased().contains("f16")) }
@@ -367,6 +388,10 @@ private func sanitizeModelOutputText(_ text: String) -> String {
         .replacingOccurrences(of: "�", with: "'")
     .replacingOccurrences(of: "<|im_start|>assistant", with: "")
     .replacingOccurrences(of: "<|im_end|>", with: "")
+    .replacingOccurrences(of: "<|turn>model", with: "")
+    .replacingOccurrences(of: "<|turn>user", with: "")
+    .replacingOccurrences(of: "<|turn>", with: "")
+    .replacingOccurrences(of: "<turn|>", with: "")
     .replacingOccurrences(of: "<start_of_turn>model", with: "")
     .replacingOccurrences(of: "<start_of_turn>user", with: "")
     .replacingOccurrences(of: "<end_of_turn>", with: "")
@@ -490,6 +515,7 @@ private struct FeatureModelSettingsSheet: View {
     @Binding var isLoading: Bool
     @Binding var errorMessage: String?
     let supportsVisionToggle: Bool
+    let visionToggleTitleKey: String
     let visionAvailableCheck: ((AIModel) -> Bool)?
     let writingMode: Binding<WritingAidMode>?
     let modelFilter: ((AIModel) -> Bool)?
@@ -578,7 +604,7 @@ private struct FeatureModelSettingsSheet: View {
                                     .foregroundColor(.white)
                             }
                             if selectedModelSupportsVision {
-                                Toggle(settings.localized("scam_detector_enable_vision"), isOn: $enableVision)
+                                Toggle(settings.localized(visionToggleTitleKey), isOn: $enableVision)
                                     .tint(.white.opacity(0.9))
                                     .foregroundColor(.white)
                             }
@@ -1564,9 +1590,10 @@ struct WritingAidScreen: View {
                 isLoading: $isLoading,
                 errorMessage: $errorMessage,
                 supportsVisionToggle: false,
+                visionToggleTitleKey: "scam_detector_enable_vision",
                 visionAvailableCheck: nil,
                 writingMode: selectedModeBinding,
-                modelFilter: nil,
+                modelFilter: isNonTranslatorFeatureModel,
                 onLoad: { await ensureModelLoaded(force: true) },
                 onUnload: { llm.unloadModel() }
             )
@@ -1574,7 +1601,7 @@ struct WritingAidScreen: View {
         .onAppear {
             Task {
                 await syncRunAnywhereModelDiscovery()
-                let available = downloadableFeatureModels()
+                let available = downloadableFeatureModels().filter(isNonTranslatorFeatureModel)
                 if selectedModelName.isEmpty || !available.contains(where: { $0.name == selectedModelName }) {
                     selectedModelName = available.first?.name ?? ""
                 }
@@ -1714,7 +1741,7 @@ struct TranslatorScreen: View {
     @ObservedObject private var llm = LLMBackend.shared
 
     private var selectedModel: AIModel? {
-        ModelData.models.first(where: { $0.name == selectedModelName && isTranslateGemmaModel($0) })
+        ModelData.models.first(where: { $0.name == selectedModelName && isTranslatorSupportedModel($0) })
     }
 
     private var isCurrentModelLoaded: Bool {
@@ -1781,9 +1808,10 @@ struct TranslatorScreen: View {
                 isLoading: $isLoading,
                 errorMessage: $errorMessage,
                 supportsVisionToggle: true,
+                visionToggleTitleKey: "translator_enable_vision",
                 visionAvailableCheck: translatorHasDownloadedVisionProjector,
                 writingMode: nil,
-                modelFilter: isTranslateGemmaModel,
+                modelFilter: isTranslatorSupportedModel,
                 onLoad: { await ensureModelLoaded(force: true) },
                 onUnload: { llm.unloadModel() }
             )
@@ -1792,7 +1820,7 @@ struct TranslatorScreen: View {
             if !isPresented {
                 Task {
                     await syncRunAnywhereModelDiscovery()
-                    let available = downloadableFeatureModels().filter(isTranslateGemmaModel)
+                    let available = downloadableFeatureModels().filter(isTranslatorSupportedModel)
                     availableTranslatorModels = available
                     if selectedModelName.isEmpty || !available.contains(where: { $0.name == selectedModelName }) {
                         selectedModelName = available.first?.name ?? ""
@@ -1803,7 +1831,7 @@ struct TranslatorScreen: View {
         .onAppear {
             Task {
                 await syncRunAnywhereModelDiscovery()
-                let available = downloadableFeatureModels().filter(isTranslateGemmaModel)
+                let available = downloadableFeatureModels().filter(isTranslatorSupportedModel)
                 availableTranslatorModels = available
                 if selectedModelName.isEmpty || !available.contains(where: { $0.name == selectedModelName }) {
                     selectedModelName = available.first?.name ?? ""
@@ -1848,7 +1876,7 @@ struct TranslatorScreen: View {
             Text(settings.localized(requiresDownload ? "translator_requires_gemma3n" : "scam_detector_load_model"))
                 .font(.title3.weight(.bold))
                 .multilineTextAlignment(.center)
-            Text(settings.localized("scam_detector_load_model_desc"))
+            Text(settings.localized(requiresDownload ? "translator_load_model_desc" : "scam_detector_load_model_desc"))
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
@@ -2136,29 +2164,33 @@ struct TranslatorScreen: View {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let targetName = englishName(for: target)
         let targetCode = target.code.replacingOccurrences(of: "_", with: "-")
+        let useGemma4Turns = selectedModel.map(usesGemma4TurnTemplate) ?? true
+        let userTurnStart = useGemma4Turns ? "<|turn>user" : "<start_of_turn>user"
+        let userTurnEnd = useGemma4Turns ? "<turn|>" : "<end_of_turn>"
+        let modelTurnStart = useGemma4Turns ? "<|turn>model" : "<start_of_turn>model"
 
         let promptBody: String
         if let source {
             let sourceName = englishName(for: source)
             let sourceCode = source.code.replacingOccurrences(of: "_", with: "-")
             promptBody = """
-            <start_of_turn>user
+            \(userTurnStart)
             You are a professional \(sourceName) (\(sourceCode)) to \(targetName) (\(targetCode)) translator. Your goal is to accurately convey the meaning and nuances of the original \(sourceName) text while adhering to \(targetName) grammar, vocabulary, and cultural sensitivities.
             Produce only the \(targetName) translation, without any additional explanations or commentary. Please translate the following \(sourceName) text into \(targetName):
 
 
-            \(trimmedText)<end_of_turn>
-            <start_of_turn>model
+            \(trimmedText)\(userTurnEnd)
+            \(modelTurnStart)
             """
         } else {
             promptBody = """
-            <start_of_turn>user
+            \(userTurnStart)
             You are a professional translator. Detect the source language of the text, then accurately translate it into \(targetName) (\(targetCode)) while preserving meaning and nuance.
             Produce only the \(targetName) translation, without any additional explanations or commentary. Please translate the following text into \(targetName):
 
 
-            \(trimmedText)<end_of_turn>
-            <start_of_turn>model
+            \(trimmedText)\(userTurnEnd)
+            \(modelTurnStart)
             """
         }
 
@@ -2170,20 +2202,11 @@ struct TranslatorScreen: View {
         let source = autoDetectSource ? nil : sourceLanguage
         let targetCode = targetLanguage.code.replacingOccurrences(of: "_", with: "-")
         let targetName = englishName(for: targetLanguage)
-
-        // Build the exact user-turn content that matches TranslateGemma's chat template output.
-        // The GGUF Jinja template generates:
-        //   "You are a professional {src} ({src_code}) to {tgt} ({tgt_code}) translator. Your goal
-        //    is to accurately convey the meaning and nuances of the original {src} text while
-        //    adhering to {tgt} grammar, vocabulary, and cultural sensitivities.\n
-        //    Produce only the {tgt} translation, without any additional explanations or commentary.
-        //    Please translate the following {src} text into {tgt}:\n\n\n{text}"
-        // (source is omitted / auto when nil → we use a neutral fallback)
+        let isTranslateGemma = selectedModel.map(isTranslateGemmaModel) ?? false
 
         let hasImage = selectedImageURL != nil && enableVision
 
         if hasImage {
-            // Image translation: let SDK pass the image prompt; source/target already declared
             let srcPart: String
             if let source = source {
                 let srcName = englishName(for: source)
@@ -2194,6 +2217,16 @@ struct TranslatorScreen: View {
             }
             let extra = trimmedInput.isEmpty ? "" : "\n\(trimmedInput)"
             return srcPart + extra
+        }
+
+        if !isTranslateGemma {
+            if let source = source {
+                let sourceName = englishName(for: source)
+                let sourceCode = source.code.replacingOccurrences(of: "_", with: "-")
+                return "You are a professional translator. Translate the following \(sourceName) (\(sourceCode)) text into \(targetName) (\(targetCode)). Preserve meaning and nuance. Respond with only the translated \(targetName) text and no commentary.\n\n\(trimmedInput)"
+            }
+
+            return "You are a professional translator. Detect the source language and translate the following text into \(targetName) (\(targetCode)). Preserve meaning and nuance. Respond with only the translated \(targetName) text and no commentary.\n\n\(trimmedInput)"
         }
 
         return rawTranslateGemmaPrompt(source: source, target: targetLanguage, text: trimmedInput)
@@ -2245,7 +2278,7 @@ struct TranslatorScreen: View {
                enableVision,
                let model = selectedModel,
                !translatorHasDownloadedVisionProjector(for: model) {
-                errorMessage = "Vision projector (mmproj) is missing for \(model.name)"
+                errorMessage = String(format: settings.localized("translator_missing_vision_projector"), model.name)
                 return
             }
 
@@ -2261,7 +2294,16 @@ struct TranslatorScreen: View {
                     prompt: buildPrompt(),
                     imageURL: effectiveImageURL,
                     maxTokensOverride: 512,
-                    stopSequences: ["<end_of_turn>", "<start_of_turn>", "<|im_start|>", "<|im_end|>"]
+                    stopSequences: [
+                        "<turn|>",
+                        "<|turn>user\n",
+                        "<|turn>system\n",
+                        "<|turn>model\n",
+                        "<end_of_turn>",
+                        "<start_of_turn>",
+                        "<|im_start|>",
+                        "<|im_end|>"
+                    ]
                 ) { text, _, _ in
                     Task { @MainActor in
                         outputText = sanitizeModelOutputText(text)
@@ -2528,9 +2570,10 @@ struct ScamDetectorScreen: View {
                 isLoading: $isLoading,
                 errorMessage: $errorMessage,
                 supportsVisionToggle: true,
+                visionToggleTitleKey: "scam_detector_enable_vision",
                 visionAvailableCheck: hasDownloadedVisionProjector,
                 writingMode: nil,
-                modelFilter: nil,
+                modelFilter: isNonTranslatorFeatureModel,
                 onLoad: { await ensureModelLoaded(force: true) },
                 onUnload: { llm.unloadModel() }
             )
@@ -2538,7 +2581,7 @@ struct ScamDetectorScreen: View {
         .onAppear {
             Task {
                 await syncRunAnywhereModelDiscovery()
-                let available = downloadableFeatureModels()
+                let available = downloadableFeatureModels().filter(isNonTranslatorFeatureModel)
                 if selectedModelName.isEmpty || !available.contains(where: { $0.name == selectedModelName }) {
                     selectedModelName = available.first?.name ?? ""
                 }
@@ -3439,9 +3482,10 @@ struct VibeCoderScreen: View {
                 isLoading: $isLoading,
                 errorMessage: $errorMessage,
                 supportsVisionToggle: false,
+                visionToggleTitleKey: "scam_detector_enable_vision",
                 visionAvailableCheck: nil,
                 writingMode: nil,
-                modelFilter: nil,
+                modelFilter: isNonTranslatorFeatureModel,
                 onLoad: { await ensureModelLoaded(force: true) },
                 onUnload: { llm.unloadModel() }
             )
@@ -3451,7 +3495,7 @@ struct VibeCoderScreen: View {
 
             Task {
                 await syncRunAnywhereModelDiscovery()
-                let available = downloadableFeatureModels()
+                let available = downloadableFeatureModels().filter(isNonTranslatorFeatureModel)
                 if selectedModelName.isEmpty || !available.contains(where: { $0.name == selectedModelName }) {
                     selectedModelName = available.first?.name ?? ""
                 }

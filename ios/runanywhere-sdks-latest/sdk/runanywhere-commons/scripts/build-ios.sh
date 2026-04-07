@@ -470,8 +470,23 @@ EOF
 EOF
     done
 
-    # SIMULATOR already contains universal binary (arm64 + x86_64)
-    local SIM_FAT="${BUILD_DIR}/SIMULATOR"
+    local SIM_FAT="${BUILD_DIR}/SIMULATOR_UNIVERSAL"
+    rm -rf "${SIM_FAT}"
+    mkdir -p "${SIM_FAT}/${FRAMEWORK_NAME}.framework"
+
+    local SIM_ARM64_BIN="${BUILD_DIR}/SIMULATORARM64/${FRAMEWORK_NAME}.framework/${FRAMEWORK_NAME}"
+    local SIM_X64_BIN="${BUILD_DIR}/SIMULATOR/${FRAMEWORK_NAME}.framework/${FRAMEWORK_NAME}"
+    if [[ -f "${SIM_ARM64_BIN}" && -f "${SIM_X64_BIN}" ]]; then
+        lipo -create -output "${SIM_FAT}/${FRAMEWORK_NAME}.framework/${FRAMEWORK_NAME}" \
+            "${SIM_ARM64_BIN}" "${SIM_X64_BIN}"
+        cp -R "${BUILD_DIR}/SIMULATORARM64/${FRAMEWORK_NAME}.framework/Headers" "${SIM_FAT}/${FRAMEWORK_NAME}.framework/"
+    elif [[ -f "${SIM_ARM64_BIN}" ]]; then
+        cp "${SIM_ARM64_BIN}" "${SIM_FAT}/${FRAMEWORK_NAME}.framework/${FRAMEWORK_NAME}"
+        cp -R "${BUILD_DIR}/SIMULATORARM64/${FRAMEWORK_NAME}.framework/Headers" "${SIM_FAT}/${FRAMEWORK_NAME}.framework/"
+    else
+        cp "${SIM_X64_BIN}" "${SIM_FAT}/${FRAMEWORK_NAME}.framework/${FRAMEWORK_NAME}"
+        cp -R "${BUILD_DIR}/SIMULATOR/${FRAMEWORK_NAME}.framework/Headers" "${SIM_FAT}/${FRAMEWORK_NAME}.framework/"
+    fi
 
     # Create XCFramework using library format (prevents SPM from embedding static libs)
     local XCFW_PATH="${DIST_DIR}/${FRAMEWORK_NAME}.xcframework"
@@ -664,8 +679,23 @@ EOF
         return 0
     fi
 
-    # SIMULATOR already contains universal binary (arm64 + x86_64)
-    local SIM_FAT="${BUILD_DIR}/SIMULATOR"
+    local SIM_FAT="${BUILD_DIR}/SIMULATOR_UNIVERSAL"
+    rm -rf "${SIM_FAT}"
+    mkdir -p "${SIM_FAT}/${FRAMEWORK_NAME}.framework"
+
+    local SIM_ARM64_BIN="${BUILD_DIR}/SIMULATORARM64/${FRAMEWORK_NAME}.framework/${FRAMEWORK_NAME}"
+    local SIM_X64_BIN="${BUILD_DIR}/SIMULATOR/${FRAMEWORK_NAME}.framework/${FRAMEWORK_NAME}"
+    if [[ -f "${SIM_ARM64_BIN}" && -f "${SIM_X64_BIN}" ]]; then
+        lipo -create -output "${SIM_FAT}/${FRAMEWORK_NAME}.framework/${FRAMEWORK_NAME}" \
+            "${SIM_ARM64_BIN}" "${SIM_X64_BIN}"
+        cp -R "${BUILD_DIR}/SIMULATORARM64/${FRAMEWORK_NAME}.framework/Headers" "${SIM_FAT}/${FRAMEWORK_NAME}.framework/"
+    elif [[ -f "${SIM_ARM64_BIN}" ]]; then
+        cp "${SIM_ARM64_BIN}" "${SIM_FAT}/${FRAMEWORK_NAME}.framework/${FRAMEWORK_NAME}"
+        cp -R "${BUILD_DIR}/SIMULATORARM64/${FRAMEWORK_NAME}.framework/Headers" "${SIM_FAT}/${FRAMEWORK_NAME}.framework/"
+    else
+        cp "${SIM_X64_BIN}" "${SIM_FAT}/${FRAMEWORK_NAME}.framework/${FRAMEWORK_NAME}"
+        cp -R "${BUILD_DIR}/SIMULATOR/${FRAMEWORK_NAME}.framework/Headers" "${SIM_FAT}/${FRAMEWORK_NAME}.framework/"
+    fi
 
     # Create XCFramework using library format (prevents SPM from embedding static libs)
     local XCFW_PATH="${DIST_DIR}/${FRAMEWORK_NAME}.xcframework"

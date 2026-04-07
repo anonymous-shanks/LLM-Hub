@@ -230,11 +230,11 @@ std::string format_vlm_prompt_with_template(llama_model* model, const std::strin
     std::string user_content;
     if (has_image) {
         if (model_type == VLMModelType::Gemma4) {
-            user_content = user_prompt;
-            if (!user_content.empty()) {
+            user_content = image_marker;
+            if (!user_prompt.empty()) {
                 user_content += "\n";
+                user_content += user_prompt;
             }
-            user_content += "<|image|>";
         } else {
             user_content = std::string(image_marker) + user_prompt;
         }

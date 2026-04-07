@@ -106,8 +106,8 @@ RELEASE_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${API_URL}" \
     -H "Content-Type: application/json" \
     -d "${RELEASE_PAYLOAD}")
 
-HTTP_CODE=$(echo "${RELEASE_RESPONSE}" | tail -1)
-RESPONSE_BODY=$(echo "${RELEASE_RESPONSE}" | head -n -1)
+HTTP_CODE=$(printf '%s\n' "${RELEASE_RESPONSE}" | tail -n 1)
+RESPONSE_BODY=$(printf '%s\n' "${RELEASE_RESPONSE}" | sed '$d')
 
 if [[ "$HTTP_CODE" == "201" ]]; then
     log_info "Release created"

@@ -93,6 +93,45 @@ int get_num_threads(int config_threads) {
     return threads;
 }
 
+static const std::vector<std::string>& vlm_stop_sequences() {
+    static const std::vector<std::string> stops = {
+        "<turn|>",
+        "<|tool_response>",
+        "<|im_end|>",
+        "<end_of_turn>",
+        "</s>",
+        "<eos>",
+        "<|turn>user\n",
+        "<|turn>system\n",
+        "<start_of_turn>user\n",
+        "<start_of_turn>system\n",
+        "\nUSER:",
+        "\nUser:",
+        "\nHuman:",
+    };
+    return stops;
+}
+
+static size_t vlm_max_stop_len() {
+    size_t max_len = 0;
+    for (const auto& stop : vlm_stop_sequences()) {
+        max_len = std::max(max_len, stop.size());
+    }
+    return max_len;
+}
+
+static size_t vlm_find_stop_pos(const std::string& text) {
+    size_t found_stop_pos = std::string::npos;
+    for (const auto& stop : vlm_stop_sequences()) {
+        size_t pos = text.find(stop);
+        if (pos != std::string::npos &&
+            (found_stop_pos == std::string::npos || pos < found_stop_pos)) {
+            found_stop_pos = pos;
+        }
+    }
+    return found_stop_pos;
+}
+
 // =============================================================================
 // CHAT TEMPLATE HELPERS
 // =============================================================================
@@ -813,6 +852,9 @@ rac_result_t rac_vlm_llamacpp_process(rac_handle_t handle, const rac_vlm_image_t
     int max_tokens = (options && options->max_tokens > 0) ? options->max_tokens : 2048;
     std::string response;
     int tokens_generated = 0;
+    const size_t max_stop_len = vlm_max_stop_len();
+    std::string stop_window;
+    stop_window.reserve(max_stop_len * 2);
 
     llama_batch batch = llama_batch_init(1, 0, 1);
     const llama_vocab* vocab = llama_model_get_vocab(backend->model);
@@ -886,7 +928,19 @@ rac_result_t rac_vlm_llamacpp_process(rac_handle_t handle, const rac_vlm_image_t
         char buf[256];
         int len = llama_token_to_piece(vocab, token, buf, sizeof(buf), 0, true);
         if (len > 0) {
-            response.append(buf, len);
+            stop_window.append(buf, len);
+
+            size_t stop_pos = vlm_find_stop_pos(stop_window);
+            if (stop_pos != std::string::npos) {
+                response.append(stop_window.substr(0, stop_pos));
+                break;
+            }
+
+            if (stop_window.size() > max_stop_len) {
+                const size_t safe_len = stop_window.size() - max_stop_len;
+                response.append(stop_window.substr(0, safe_len));
+                stop_window.erase(0, safe_len);
+            }
         }
         tokens_generated++;
 
@@ -904,6 +958,15 @@ rac_result_t rac_vlm_llamacpp_process(rac_handle_t handle, const rac_vlm_image_t
     }
 
     llama_batch_free(batch);
+
+    if (!stop_window.empty()) {
+        size_t stop_pos = vlm_find_stop_pos(stop_window);
+        if (stop_pos != std::string::npos) {
+            response.append(stop_window.substr(0, stop_pos));
+        } else {
+            response.append(stop_window);
+        }
+    }
 
     // Fill result
     out_result->text = strdup(response.c_str());
@@ -1061,6 +1124,9 @@ rac_result_t rac_vlm_llamacpp_process_stream(rac_handle_t handle, const rac_vlm_
 
     llama_batch batch = llama_batch_init(1, 0, 1);
     const llama_vocab* vocab = llama_model_get_vocab(backend->model);
+    const size_t max_stop_len = vlm_max_stop_len();
+    std::string stop_window;
+    stop_window.reserve(max_stop_len * 2);
 
     // Runtime repetition guard (same as non-streaming path)
     llama_token prev_token = -1;
@@ -1092,13 +1158,39 @@ rac_result_t rac_vlm_llamacpp_process_stream(rac_handle_t handle, const rac_vlm_
         char buf[256];
         int len = llama_token_to_piece(vocab, token, buf, sizeof(buf), 0, true);
         if (len > 0) {
-            buf[len] = '\0';
-            if (callback(buf, is_eog ? RAC_TRUE : RAC_FALSE, user_data) == RAC_FALSE) {
-                break;  // Callback requested stop
+            stop_window.append(buf, len);
+
+            size_t stop_pos = vlm_find_stop_pos(stop_window);
+            if (stop_pos != std::string::npos) {
+                std::string chunk = stop_window.substr(0, stop_pos);
+                if (!chunk.empty() && callback(chunk.c_str(), RAC_FALSE, user_data) == RAC_FALSE) {
+                    break;
+                }
+                callback("", RAC_TRUE, user_data);
+                break;
+            }
+
+            if (stop_window.size() > max_stop_len) {
+                const size_t safe_len = stop_window.size() - max_stop_len;
+                std::string chunk = stop_window.substr(0, safe_len);
+                stop_window.erase(0, safe_len);
+                if (!chunk.empty() && callback(chunk.c_str(), RAC_FALSE, user_data) == RAC_FALSE) {
+                    break;  // Callback requested stop
+                }
             }
         }
 
         if (is_eog) {
+            if (!stop_window.empty()) {
+                size_t stop_pos = vlm_find_stop_pos(stop_window);
+                std::string chunk = stop_pos != std::string::npos
+                    ? stop_window.substr(0, stop_pos)
+                    : stop_window;
+                if (!chunk.empty() && callback(chunk.c_str(), RAC_FALSE, user_data) == RAC_FALSE) {
+                    break;
+                }
+            }
+            callback("", RAC_TRUE, user_data);
             break;
         }
 

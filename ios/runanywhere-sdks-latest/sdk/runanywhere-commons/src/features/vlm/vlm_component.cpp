@@ -114,6 +114,27 @@ static const char* vlm_strip_special_tokens(const char* token, char* buf, size_t
     size_t len = strlen(token);
 
     while (i < len && out < buf_size - 1) {
+        if (token[i] == '<') {
+            // Gemma 4 / legacy Gemma tokens that do not follow the <|...|> pattern.
+            static const char* exact_tokens[] = {
+                "<|turn>", "<turn|>", "<|image|>", "<|audio|>",
+                "<start_of_turn>", "<end_of_turn>",
+            };
+
+            bool skipped_exact = false;
+            for (const char* special : exact_tokens) {
+                size_t special_len = strlen(special);
+                if (i + special_len <= len && strncmp(token + i, special, special_len) == 0) {
+                    i += special_len;
+                    skipped_exact = true;
+                    break;
+                }
+            }
+            if (skipped_exact) {
+                continue;
+            }
+        }
+
         if (token[i] == '<' && i + 1 < len && token[i + 1] == '|') {
             // Scan ahead for closing |>
             size_t end = i + 2;

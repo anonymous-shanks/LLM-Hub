@@ -8,7 +8,7 @@
 #
 # WHAT IT DOES:
 #   1. Zips the built XCFrameworks from runanywhere-sdks-latest/sdk/runanywhere-commons/dist/
-#   2. Creates a GitHub Release on timmyy123/LLM-Hub tagged ios-sdk-v0.19.7-patched
+#   2. Creates or updates the GitHub Release on timmyy123/LLM-Hub tagged ios-sdk-v0.19.7-patched-v2
 #   3. Uploads both ZIPs + checksums.txt as release assets
 #   4. Prints the SHA-256 checksums so you can update Package.swift
 #
@@ -29,12 +29,13 @@ DIST_DIR="${COMMONS_DIR}/dist"
 GITHUB_TOKEN="${1:-}"
 REPO="timmyy123/LLM-Hub"
 SDK_VERSION="0.19.7"
-RELEASE_TAG="ios-sdk-v${SDK_VERSION}-patched"
-RELEASE_TITLE="iOS SDK v${SDK_VERSION} (batch-size patch)"
+RELEASE_TAG="ios-sdk-v${SDK_VERSION}-patched-v2"
+RELEASE_TITLE="iOS SDK v${SDK_VERSION} (patched v2)"
 RELEASE_NOTES="Patched RunAnywhere SDK v${SDK_VERSION}:
 - MAX_BATCH_SIZE = 2048 (was 4096) — fixes OOM on Gemma 4B (Q2_K) / 3.9B models
 - MAX_UBATCH_SIZE = 512
 - n_ctx still 4096, but Metal allocates ~2049 MiB instead of 4097 MiB
+- Gemma 4 VLM prompt and stop-token fixes
 - Built from ios/runanywhere-sdks-latest local source
 
 To use, set ios/runanywhere-sdks-latest/Package.swift useLocalBinaries = false
@@ -127,6 +128,19 @@ RELEASE_HTML_URL=$(echo "${RESPONSE_BODY}" | python3 -c "import sys,json; d=json
 upload_asset() {
     local FILE=$1
     local FILENAME=$(basename "${FILE}")
+    local ASSET_ID=""
+
+    ASSET_ID=$(echo "${RESPONSE_BODY}" | python3 -c "import sys,json; d=json.load(sys.stdin); assets=d.get('assets', []); found=next((str(a['id']) for a in assets if a.get('name') == '${FILENAME}'), ''); print(found)")
+    if [[ -n "${ASSET_ID}" ]]; then
+        log_step "Deleting existing asset ${FILENAME}..."
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X DELETE "https://api.github.com/repos/${REPO}/releases/assets/${ASSET_ID}" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28")
+        [[ "$HTTP_CODE" == "204" ]] || log_error "Failed to delete existing asset ${FILENAME} (HTTP ${HTTP_CODE})"
+    fi
+
     log_step "Uploading ${FILENAME}..."
     HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
         -X POST "${UPLOAD_URL}?name=${FILENAME}" \
@@ -140,6 +154,19 @@ upload_asset() {
 upload_text_asset() {
     local FILE=$1
     local FILENAME=$(basename "${FILE}")
+    local ASSET_ID=""
+
+    ASSET_ID=$(echo "${RESPONSE_BODY}" | python3 -c "import sys,json; d=json.load(sys.stdin); assets=d.get('assets', []); found=next((str(a['id']) for a in assets if a.get('name') == '${FILENAME}'), ''); print(found)")
+    if [[ -n "${ASSET_ID}" ]]; then
+        log_step "Deleting existing asset ${FILENAME}..."
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X DELETE "https://api.github.com/repos/${REPO}/releases/assets/${ASSET_ID}" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28")
+        [[ "$HTTP_CODE" == "204" ]] || log_error "Failed to delete existing asset ${FILENAME} (HTTP ${HTTP_CODE})"
+    fi
+
     log_step "Uploading ${FILENAME}..."
     HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
         -X POST "${UPLOAD_URL}?name=${FILENAME}" \

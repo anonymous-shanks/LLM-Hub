@@ -49,6 +49,61 @@ struct Utf8State {
     void reset() { state = 0; }
 };
 
+static bool starts_with(const std::string& text, const std::string& prefix) {
+    return text.size() >= prefix.size() && text.compare(0, prefix.size(), prefix) == 0;
+}
+
+static const std::vector<std::string>& gemma_leading_artifacts() {
+    static const std::vector<std::string> artifacts = {
+        "<bos>",
+        "<eos>",
+        "<start_of_turn>model\r\n",
+        "<start_of_turn>model\n",
+        "<start_of_turn>model",
+    };
+    return artifacts;
+}
+
+static bool is_prefix_of_gemma_leading_artifact(const std::string& text) {
+    if (text.empty()) {
+        return false;
+    }
+
+    for (const auto& artifact : gemma_leading_artifacts()) {
+        if (artifact.size() >= text.size() && artifact.compare(0, text.size(), text) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static size_t strip_gemma_leading_artifacts(std::string& text) {
+    size_t stripped_count = 0;
+
+    for (;;) {
+        bool stripped = false;
+
+        for (const auto& artifact : gemma_leading_artifacts()) {
+            if (starts_with(text, artifact)) {
+                text.erase(0, artifact.size());
+                while (!text.empty() && (text.front() == '\n' || text.front() == '\r')) {
+                    text.erase(0, 1);
+                }
+                stripped = true;
+                stripped_count++;
+                break;
+            }
+        }
+
+        if (!stripped) {
+            break;
+        }
+    }
+
+    return stripped_count;
+}
+
 // =============================================================================
 // LOG CALLBACK
 // =============================================================================
@@ -796,6 +851,10 @@ bool LlamaCppTextGeneration::generate_stream(const TextGenerationRequest& reques
     std::string partial_utf8_buffer;
     partial_utf8_buffer.reserve(8);
 
+    std::string leading_output_buffer;
+    leading_output_buffer.reserve(64);
+    bool leading_output_committed = false;
+
     int n_cur = batch.n_tokens;
     int tokens_generated = 0;
     bool stop_sequence_hit = false;
@@ -826,38 +885,64 @@ bool LlamaCppTextGeneration::generate_stream(const TextGenerationRequest& reques
 
         if (valid_upto > 0) {
             std::string valid_chunk = partial_utf8_buffer.substr(0, valid_upto);
-            stop_window.append(valid_chunk);
             partial_utf8_buffer.erase(0, valid_upto);
 
-            size_t found_stop_pos = std::string::npos;
-            for (const auto& stop_seq : effective_stop_sequences) {
-                size_t pos = stop_window.find(stop_seq);
-                if (pos != std::string::npos) {
-                    if (found_stop_pos == std::string::npos || pos < found_stop_pos) {
-                        found_stop_pos = pos;
+            bool do_stop_check = false;
+            if (!leading_output_committed) {
+                leading_output_buffer.append(valid_chunk);
+
+                const size_t stripped_count = strip_gemma_leading_artifacts(leading_output_buffer);
+                if (stripped_count > 0) {
+                    LOGI("Stripped %zu leading Gemma response artifact(s)", stripped_count);
+                }
+
+                if (!leading_output_buffer.empty()) {
+                    const bool wait_for_more =
+                        is_prefix_of_gemma_leading_artifact(leading_output_buffer) &&
+                        leading_output_buffer.size() < 64;
+                    if (!wait_for_more) {
+                        stop_window.append(leading_output_buffer);
+                        leading_output_buffer.clear();
+                        leading_output_committed = true;
+                        do_stop_check = true;
                     }
                 }
+            } else {
+                stop_window.append(valid_chunk);
+                do_stop_check = true;
             }
 
-            if (found_stop_pos != std::string::npos) {
-                LOGI("Stop sequence detected");
-                stop_sequence_hit = true;
-                if (found_stop_pos > 0) {
-                    if (!callback(stop_window.substr(0, found_stop_pos))) {
-                        cancel_requested_.store(true);
+            if (do_stop_check) {
+                size_t found_stop_pos = std::string::npos;
+                for (const auto& stop_seq : effective_stop_sequences) {
+                    size_t pos = stop_window.find(stop_seq);
+                    if (pos != std::string::npos) {
+                        if (found_stop_pos == std::string::npos || pos < found_stop_pos) {
+                            found_stop_pos = pos;
+                        }
                     }
                 }
-                break;
-            }
 
-            if (stop_window.size() > MAX_STOP_LEN) {
-                size_t safe_len = stop_window.size() - MAX_STOP_LEN;
-                if (!callback(stop_window.substr(0, safe_len))) {
-                    LOGI("Generation cancelled by callback");
-                    cancel_requested_.store(true);
+                if (found_stop_pos != std::string::npos) {
+                    LOGI("Stop sequence detected");
+                    stop_sequence_hit = true;
+                    if (found_stop_pos > 0) {
+                        if (!callback(stop_window.substr(0, found_stop_pos))) {
+                            cancel_requested_.store(true);
+                        }
+                    }
                     break;
                 }
-                stop_window.erase(0, safe_len);
+
+                if (stop_window.size() > MAX_STOP_LEN) {
+                    size_t safe_len = stop_window.size() - MAX_STOP_LEN;
+                    if (!callback(stop_window.substr(0, safe_len))) {
+                        LOGI("Generation cancelled by callback");
+                        cancel_requested_.store(true);
+                        break;
+                    }
+                    stop_window.erase(0, safe_len);
+                }
             }
         }
 
@@ -871,6 +956,16 @@ bool LlamaCppTextGeneration::generate_stream(const TextGenerationRequest& reques
             LOGE("llama_decode failed during generation");
             decode_failed_ = true;
             break;
+        }
+    }
+
+    if (!leading_output_committed && !leading_output_buffer.empty()) {
+        const size_t stripped_count = strip_gemma_leading_artifacts(leading_output_buffer);
+        if (stripped_count > 0) {
+            LOGI("Stripped %zu trailing Gemma response artifact(s)", stripped_count);
+        }
+        if (!leading_output_buffer.empty()) {
+            stop_window.insert(0, leading_output_buffer);
         }
     }
 
@@ -1100,6 +1195,10 @@ TextGenerationResult LlamaCppTextGeneration::generate_from_context(const TextGen
     std::string partial_utf8_buffer;
     partial_utf8_buffer.reserve(8);
 
+    std::string leading_output_buffer;
+    leading_output_buffer.reserve(64);
+    bool leading_output_committed = false;
+
     std::string generated_text;
     int n_cur = static_cast<int>(current_pos) + n_prompt;
     int tokens_generated = 0;
@@ -1148,30 +1247,57 @@ TextGenerationResult LlamaCppTextGeneration::generate_from_context(const TextGen
         const size_t valid_upto = Utf8Check::valid_upto(partial_utf8_buffer);
         if (valid_upto > 0) {
             std::string valid_chunk = partial_utf8_buffer.substr(0, valid_upto);
-            stop_window.append(valid_chunk);
             partial_utf8_buffer.erase(0, valid_upto);
 
-            size_t found_stop_pos = std::string::npos;
-            for (const auto& stop_seq : effective_stop_sequences) {
-                const size_t pos = stop_window.find(stop_seq);
-                if (pos != std::string::npos &&
-                    (found_stop_pos == std::string::npos || pos < found_stop_pos)) {
-                    found_stop_pos = pos;
+            bool do_stop_check = false;
+            if (!leading_output_committed) {
+                leading_output_buffer.append(valid_chunk);
+
+                const size_t stripped_count = strip_gemma_leading_artifacts(leading_output_buffer);
+                if (stripped_count > 0) {
+                    LOGI("generate_from_context: stripped %zu leading Gemma response artifact(s)",
+                         stripped_count);
                 }
+
+                if (!leading_output_buffer.empty()) {
+                    const bool wait_for_more =
+                        is_prefix_of_gemma_leading_artifact(leading_output_buffer) &&
+                        leading_output_buffer.size() < 64;
+                    if (!wait_for_more) {
+                        stop_window.append(leading_output_buffer);
+                        leading_output_buffer.clear();
+                        leading_output_committed = true;
+                        do_stop_check = true;
+                    }
+                }
+            } else {
+                stop_window.append(valid_chunk);
+                do_stop_check = true;
             }
 
-            if (found_stop_pos != std::string::npos) {
-                stop_sequence_hit = true;
-                if (found_stop_pos > 0) {
-                    generated_text += stop_window.substr(0, found_stop_pos);
+            if (do_stop_check) {
+                size_t found_stop_pos = std::string::npos;
+                for (const auto& stop_seq : effective_stop_sequences) {
+                    const size_t pos = stop_window.find(stop_seq);
+                    if (pos != std::string::npos &&
+                        (found_stop_pos == std::string::npos || pos < found_stop_pos)) {
+                        found_stop_pos = pos;
+                    }
                 }
-                break;
-            }
 
-            if (stop_window.size() > MAX_STOP_LEN) {
-                const size_t safe_len = stop_window.size() - MAX_STOP_LEN;
-                generated_text += stop_window.substr(0, safe_len);
-                stop_window.erase(0, safe_len);
+                if (found_stop_pos != std::string::npos) {
+                    stop_sequence_hit = true;
+                    if (found_stop_pos > 0) {
+                        generated_text += stop_window.substr(0, found_stop_pos);
+                    }
+                    break;
+                }
+
+                if (stop_window.size() > MAX_STOP_LEN) {
+                    const size_t safe_len = stop_window.size() - MAX_STOP_LEN;
+                    generated_text += stop_window.substr(0, safe_len);
+                    stop_window.erase(0, safe_len);
+                }
             }
         }
 
@@ -1184,6 +1310,17 @@ TextGenerationResult LlamaCppTextGeneration::generate_from_context(const TextGen
             LOGE("generate_from_context: llama_decode failed during generation");
             decode_failed_ = true;
             break;
+        }
+    }
+
+    if (!leading_output_committed && !leading_output_buffer.empty()) {
+        const size_t stripped_count = strip_gemma_leading_artifacts(leading_output_buffer);
+        if (stripped_count > 0) {
+            LOGI("generate_from_context: stripped %zu trailing Gemma response artifact(s)",
+                 stripped_count);
+        }
+        if (!leading_output_buffer.empty()) {
+            stop_window.insert(0, leading_output_buffer);
         }
     }
 

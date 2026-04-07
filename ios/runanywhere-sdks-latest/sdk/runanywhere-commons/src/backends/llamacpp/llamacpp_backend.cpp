@@ -57,6 +57,9 @@ static const std::vector<std::string>& gemma_leading_artifacts() {
     static const std::vector<std::string> artifacts = {
         "<bos>",
         "<eos>",
+        "<|turn>model\r\n",
+        "<|turn>model\n",
+        "<|turn>model",
         "<start_of_turn>model\r\n",
         "<start_of_turn>model\n",
         "<start_of_turn>model",
@@ -543,26 +546,31 @@ std::string LlamaCppTextGeneration::apply_chat_template(
         model_arch.clear();
     }
 
-    // For Gemma architectures (gemma, gemma2, gemma3, gemma4, …) always use a
-    // hardcoded <start_of_turn> prompt.  The model's embedded Jinja template
-    // includes a leading <bos> which causes a double-BOS when our tokenizer also
-    // adds one (add_special=true), confusing the model into generating garbage.
-    // The "gemma3" built-in is also unreliable for gemma4.  This hardcoded path
-    // is safe for all Gemma variants.
+    // Gemma prompt formats differ by generation:
+    // - Gemma 4 uses <|turn>role ... <turn|>
+    // - Gemma 1/2/3 use <start_of_turn>role ... <end_of_turn>
+    // We bypass Jinja for Gemma variants because the embedded template path has
+    // been unreliable across llama.cpp builds and can introduce a double-BOS.
     {
         bool is_gemma = !model_arch.empty() && model_arch.find("gemma") != std::string::npos;
         if (is_gemma) {
-            LOGI("Gemma arch=%s detected — using hardcoded <start_of_turn> template (skip Jinja)",
-                 model_arch.c_str());
+            const bool is_gemma4 = model_arch.find("gemma4") != std::string::npos;
+            LOGI("Gemma arch=%s detected — using hardcoded %s template (skip Jinja)",
+                 model_arch.c_str(), is_gemma4 ? "Gemma4 <|turn>|<turn|>" : "legacy <start_of_turn>");
             std::string gemma_prompt;
             for (const auto& msg : chat_messages) {
                 std::string role(msg.role);
                 std::string gemma_role = (role == "assistant") ? "model" : role;
-                gemma_prompt += "<start_of_turn>" + gemma_role + "\n";
-                gemma_prompt += std::string(msg.content) + "<end_of_turn>\n";
+                if (is_gemma4) {
+                    gemma_prompt += "<|turn>" + gemma_role + "\n";
+                    gemma_prompt += std::string(msg.content) + "<turn|>\n";
+                } else {
+                    gemma_prompt += "<start_of_turn>" + gemma_role + "\n";
+                    gemma_prompt += std::string(msg.content) + "<end_of_turn>\n";
+                }
             }
             if (add_assistant_token) {
-                gemma_prompt += "<start_of_turn>model\n";
+                gemma_prompt += is_gemma4 ? "<|turn>model\n" : "<start_of_turn>model\n";
             }
             return gemma_prompt;
         }
@@ -845,9 +853,13 @@ bool LlamaCppTextGeneration::generate_stream(const TextGenerationRequest& reques
     static const std::vector<std::string> STOP_SEQUENCES = {
         "<|im_end|>", "<|eot_id|>", "</s>", "<|end|>", "<|endoftext|>",
         "\n\nUser:", "\n\nHuman:",
+        "<turn|>",                  // Gemma4 end-of-turn marker
+        "<|tool_response>",         // Gemma4 tool handoff stop marker
         "<end_of_turn>",      // Gemma3/Gemma4 end-of-turn marker
         "<start_of_turn>user\n",   // stop if model hallucinates a user turn
         "<start_of_turn>system\n", // stop if model hallucinates a system turn
+        "<|turn>user\n",           // Gemma4 user turn marker
+        "<|turn>system\n",         // Gemma4 system turn marker
         "<eos>",                   // text form of EOS (safety net)
     };
 
@@ -1199,9 +1211,13 @@ TextGenerationResult LlamaCppTextGeneration::generate_from_context(const TextGen
     static const std::vector<std::string> STOP_SEQUENCES = {
         "<|im_end|>", "<|eot_id|>", "</s>", "<|end|>", "<|endoftext|>",
         "\n\nUser:", "\n\nHuman:",
+        "<turn|>",                  // Gemma4 end-of-turn marker
+        "<|tool_response>",         // Gemma4 tool handoff stop marker
         "<end_of_turn>",      // Gemma3/Gemma4 end-of-turn marker
         "<start_of_turn>user\n",   // stop if model hallucinates a user turn
         "<start_of_turn>system\n", // stop if model hallucinates a system turn
+        "<|turn>user\n",           // Gemma4 user turn marker
+        "<|turn>system\n",         // Gemma4 system turn marker
         "<eos>",                   // text form of EOS (safety net)
     };
 

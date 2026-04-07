@@ -603,6 +603,11 @@ class ChatViewModel: ObservableObject {
         let leakedPrefixes = [
             "<bos>",
             "<eos>",
+            "<|turn>model\n",
+            "<|turn>model\r\n",
+            "<|turn>model",
+            "<|turn>",
+            "<turn|>",
             "<start_of_turn>model\n",
             "<start_of_turn>model\r\n",
             "<start_of_turn>model",

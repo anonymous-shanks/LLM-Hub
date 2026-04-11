@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 
 @main
 struct LLMHubApp: App {
@@ -11,6 +12,7 @@ struct LLMHubApp: App {
             FileHandle.standardError.write(data)
         }
         NSLog("[LLMHub] App launched")
+        UISwitch.appearance().onTintColor = UIColor(ApolloPalette.accentStrong)
     }
 
     var body: some Scene {

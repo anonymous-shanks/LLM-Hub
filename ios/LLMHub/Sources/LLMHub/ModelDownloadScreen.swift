@@ -375,16 +375,6 @@ struct ModelRowView: View {
             // Header
             Button(action: onExpand) {
                 HStack(spacing: 12) {
-                    // Model icon
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(categoryGradient)
-                            .frame(width: 44, height: 44)
-                        Image(systemName: model.category.icon)
-                            .font(.system(size: 20))
-                            .foregroundColor(.white)
-                    }
-
                     VStack(alignment: .leading, spacing: 3) {
                         Text(model.name)
                             .font(.subheadline.bold())
@@ -408,13 +398,13 @@ struct ModelRowView: View {
                         // Capability badges
                         HStack(spacing: 4) {
                             if model.supportsVision {
-                                capabilityBadge(settings.localized("vision"), color: .purple)
+                                capabilityBadge(settings.localized("vision"), color: ApolloPalette.accentStrong)
                             }
                             if model.supportsAudio {
-                                capabilityBadge(settings.localized("audio"), color: .orange)
+                                capabilityBadge(settings.localized("audio"), color: ApolloPalette.warning)
                             }
                             if !model.supportsVision && !model.supportsAudio {
-                                capabilityBadge(settings.localized("text_only"), color: .indigo)
+                                capabilityBadge(settings.localized("text_only"), color: ApolloPalette.accent)
                             }
                         }
                     }
@@ -435,7 +425,7 @@ struct ModelRowView: View {
             if case .downloading(let progress, let downloaded, let speed) = state {
                 VStack(spacing: 4) {
                     ProgressView(value: progress)
-                        .tint(.indigo)
+                        .tint(ApolloPalette.accentStrong)
                         .padding(.horizontal, 16)
                     HStack {
                         Text("\(settings.localized("downloading")) \(downloaded) / \(model.sizeLabel) (\(speed))")
@@ -444,7 +434,7 @@ struct ModelRowView: View {
                         Spacer()
                         Text("\(Int(progress * 100))%")
                             .font(.caption.bold())
-                            .foregroundColor(.indigo)
+                            .foregroundColor(ApolloPalette.accentStrong)
                     }
                     .padding(.horizontal, 16)
                 }
@@ -462,12 +452,9 @@ struct ModelRowView: View {
 
 
                     HStack(spacing: 6) {
-                        Image(systemName: "link")
-                            .font(.caption)
-                            .foregroundColor(.indigo)
                         Text(model.url)
                             .font(.caption)
-                            .foregroundColor(.indigo)
+                            .foregroundColor(ApolloPalette.accentStrong)
                             .lineLimit(1)
                     }
                     .padding(.horizontal, 16)
@@ -480,7 +467,13 @@ struct ModelRowView: View {
                                 Label(settings.localized("download"), systemImage: "arrow.down.circle.fill")
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 10)
-                                    .background(.indigo.gradient)
+                                    .background(
+                                        LinearGradient(
+                                            colors: [ApolloPalette.accentSoft, ApolloPalette.accentMuted],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
                                     .foregroundColor(.white)
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
                             }
@@ -498,7 +491,7 @@ struct ModelRowView: View {
                                 Label(settings.localized("pause_download"), systemImage: "pause.circle.fill")
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 10)
-                                    .background(.orange.gradient)
+                                    .background(ApolloPalette.warning.gradient)
                                     .foregroundColor(.white)
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
                             }
@@ -515,7 +508,7 @@ struct ModelRowView: View {
                                 Label(settings.localized("resume_download"), systemImage: "play.circle.fill")
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 10)
-                                    .background(.green.gradient)
+                                    .background(ApolloPalette.accentSoft.gradient)
                                     .foregroundColor(.white)
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
                             }
@@ -550,15 +543,6 @@ struct ModelRowView: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Color.white.opacity(0.16), lineWidth: 1)
         )
-    }
-
-    private var categoryGradient: LinearGradient {
-        switch model.category {
-        case .text:       return LinearGradient(colors: [.indigo, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .multimodal: return LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .embedding:  return LinearGradient(colors: [.teal, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .imageGeneration: return LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
-        }
     }
 
     private func capabilityBadge(_ text: String, color: Color) -> some View {
@@ -601,10 +585,10 @@ struct StatusBadge: View {
     private var dotColor: Color {
         switch state {
         case .notDownloaded:  return .secondary
-        case .downloading:    return .indigo
-        case .paused:         return .orange
-        case .downloaded:     return .green
-        case .error:          return .red
+        case .downloading:    return ApolloPalette.accentStrong
+        case .paused:         return ApolloPalette.warning
+        case .downloaded:     return ApolloPalette.accentSoft
+        case .error:          return ApolloPalette.destructive
         }
     }
 }
@@ -668,8 +652,6 @@ struct ModelDownloadScreen: View {
                                         }
                                     } label: {
                                         HStack(spacing: 10) {
-                                            Image(systemName: "folder.fill")
-                                                .foregroundColor(.blue.opacity(0.85))
                                             Text(family.title)
                                                 .font(.subheadline.bold())
                                                 .foregroundColor(.white)
@@ -763,8 +745,6 @@ struct CategoryTab: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 6) {
-                Image(systemName: category.icon)
-                    .font(.subheadline)
                 Text(settings.localized(category.titleKey))
                     .font(.subheadline.bold())
                 Text("\(count)")
@@ -777,7 +757,17 @@ struct CategoryTab: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(isSelected ? AnyShapeStyle(LinearGradient(colors: [Color.blue.opacity(0.85), Color(hex: "5f77b8")], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.ultraThinMaterial))
+            .background(
+                isSelected
+                    ? AnyShapeStyle(
+                        LinearGradient(
+                            colors: [ApolloPalette.accentSoft, ApolloPalette.accentMuted],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    : AnyShapeStyle(.ultraThinMaterial)
+            )
             .foregroundColor(isSelected ? .white : .white.opacity(0.78))
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(
@@ -788,4 +778,3 @@ struct CategoryTab: View {
         .buttonStyle(.plain)
     }
 }
-

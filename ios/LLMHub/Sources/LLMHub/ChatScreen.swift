@@ -221,10 +221,11 @@ class ChatViewModel: ObservableObject {
     }
 
     var contextWindowCapForSession: Double {
-        let selectedModelCap = Double(max(1, chatModel(named: selectedModelName)?.contextWindowSize ?? 0))
-        let loadedCap = Double(max(1, llmBackend.loadedContextWindow ?? 0))
         let configuredCap = Double(max(1, Int(contextWindow)))
-        return max(selectedModelCap, loadedCap, configuredCap, 1)
+        if let loadedContextWindow = llmBackend.loadedContextWindow {
+            return Double(max(1, loadedContextWindow))
+        }
+        return configuredCap
     }
 
     var contextBudgetForRing: Double {
@@ -1237,7 +1238,7 @@ struct ChatDrawerPanel: View {
                         onClose()
                     } label: {
                         Label(settings.localized("drawer_new_chat"), systemImage: "plus.bubble.fill")
-                            .foregroundColor(.indigo)
+                            .foregroundColor(ApolloPalette.accentStrong)
                             .fontWeight(.semibold)
                     }
                 }
@@ -1255,7 +1256,7 @@ struct ChatDrawerPanel: View {
                             } label: {
                                 HStack {
                                     Image(systemName: "bubble.left.fill")
-                                        .foregroundColor(.indigo.opacity(0.7))
+                                        .foregroundColor(ApolloPalette.accent.opacity(0.9))
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(session.title)
                                             .foregroundColor(.primary)
@@ -1267,7 +1268,7 @@ struct ChatDrawerPanel: View {
                                     Spacer()
                                     if session.id == vm.currentSessionId {
                                         Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(.indigo)
+                                            .foregroundColor(ApolloPalette.accentStrong)
                                     }
                                 }
                             }
@@ -1395,7 +1396,7 @@ struct ChatScreen: View {
                     Circle()
                         .trim(from: 0, to: vm.contextUsageFractionDisplay)
                         .stroke(
-                            vm.contextUsageFractionRaw < 0.90 ? Color.cyan : Color.orange,
+                            vm.contextUsageFractionRaw < 0.90 ? ApolloPalette.accentStrong : ApolloPalette.warning,
                             style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
                         )
                         .rotationEffect(.degrees(-90))
@@ -1786,7 +1787,7 @@ struct ChatScreen: View {
             } else {
                 Image(systemName: "cpu")
                     .font(.system(size: 64))
-                    .foregroundStyle(.linearGradient(colors: [.indigo, .purple], startPoint: .top, endPoint: .bottom))
+                    .foregroundStyle(.linearGradient(colors: [ApolloPalette.accentStrong, ApolloPalette.accentMuted], startPoint: .top, endPoint: .bottom))
             }
             
             Text(settings.localized("welcome_to_llm_hub"))

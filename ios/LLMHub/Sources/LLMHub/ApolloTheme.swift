@@ -1,4 +1,14 @@
 import SwiftUI
+import UIKit
+
+enum ApolloPalette {
+    static let accent = Color(hex: "8AAE9F")
+    static let accentStrong = Color(hex: "A7D4C3")
+    static let accentMuted = Color(hex: "5C7682")
+    static let accentSoft = Color(hex: "6F8E85")
+    static let warning = Color(hex: "E0A96D")
+    static let destructive = Color(hex: "E96A63")
+}
 
 struct ApolloLiquidBackground: View {
     var body: some View {
@@ -17,10 +27,16 @@ struct ApolloLiquidBackground: View {
                 .offset(x: 130, y: -260)
 
             Circle()
-                .fill(Color.blue.opacity(0.20))
+                .fill(ApolloPalette.accent.opacity(0.18))
                 .frame(width: 220, height: 220)
                 .blur(radius: 90)
                 .offset(x: -140, y: -220)
+
+            Circle()
+                .fill(ApolloPalette.accentMuted.opacity(0.16))
+                .frame(width: 300, height: 300)
+                .blur(radius: 110)
+                .offset(x: 160, y: 260)
         }
     }
 }
@@ -45,5 +61,25 @@ private struct ApolloScreenBackgroundModifier: ViewModifier {
 extension View {
     func apolloScreenBackground() -> some View {
         modifier(ApolloScreenBackgroundModifier())
+    }
+
+    func enableSwipeBack() -> some View {
+        background(ApolloSwipeBackEnabler())
+    }
+}
+
+private struct ApolloSwipeBackEnabler: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UIViewController {
+        let controller = UIViewController()
+        controller.view.backgroundColor = .clear
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
+        DispatchQueue.main.async {
+            guard let navigationController = uiViewController.navigationController else { return }
+            navigationController.interactivePopGestureRecognizer?.isEnabled = true
+            navigationController.interactivePopGestureRecognizer?.delegate = nil
+        }
     }
 }

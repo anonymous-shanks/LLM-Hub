@@ -26,7 +26,7 @@ struct ChatSettingsSheet: View {
                             HStack(alignment: .center, spacing: 14) {
                                 Image(systemName: "cpu")
                                     .font(.system(size: 26))
-                                    .foregroundColor(.blue.opacity(0.85))
+                                    .foregroundColor(ApolloPalette.accentStrong)
                                     .frame(width: 32)
                                 
                                 VStack(alignment: .leading, spacing: 2) {
@@ -50,25 +50,11 @@ struct ChatSettingsSheet: View {
                                     }
                                 }
                                 .pickerStyle(.menu)
-                                .accentColor(.blue.opacity(0.88))
+                                .accentColor(ApolloPalette.accentStrong)
                                 .labelsHidden()
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
-                            
-                            if currentModel != nil {
-                                Divider()
-                                HStack {
-                                    Label(settings.localized("currently_loaded"), systemImage: "bolt.circle.fill")
-                                        .font(.subheadline)
-                                        .foregroundColor(.white.opacity(0.72))
-                                    Spacer()
-                                    Text(vm.loadedModelName ?? settings.localized("not_loaded"))
-                                        .font(.caption.bold())
-                                        .foregroundColor(vm.loadedModelName != nil ? .green : .white.opacity(0.65))
-                                        .multilineTextAlignment(.trailing)
-                                }
-                            }
                         }
                         .padding()
                         .background(.ultraThinMaterial)
@@ -83,7 +69,7 @@ struct ChatSettingsSheet: View {
                         VStack(alignment: .leading, spacing: 20) {
                             HStack {
                                 Image(systemName: "slider.horizontal.3")
-                                    .foregroundColor(.blue.opacity(0.86))
+                                    .foregroundColor(ApolloPalette.accentStrong)
                                 Text(settings.localized("model_configs_title"))
                                     .font(.headline)
                                     .foregroundColor(.white)
@@ -102,7 +88,7 @@ struct ChatSettingsSheet: View {
                                     resetAllConfigsToDefaults()
                                 }
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundColor(.blue.opacity(0.92))
+                                .foregroundColor(ApolloPalette.accentStrong)
                             }
                             
                         }
@@ -121,7 +107,7 @@ struct ChatSettingsSheet: View {
                             VStack(alignment: .leading, spacing: 16) {
                                 HStack {
                                     Image(systemName: "sparkles")
-                                        .foregroundColor(.blue.opacity(0.86))
+                                        .foregroundColor(ApolloPalette.accentStrong)
                                     Text(settings.localized("modality_options"))
                                         .font(.headline)
                                         .foregroundColor(.white)
@@ -181,14 +167,14 @@ struct ChatSettingsSheet: View {
                                 }) {
                                     Text(settings.localized("unload_model"))
                                         .fontWeight(.medium)
-                                        .foregroundColor(.red.opacity(0.94))
+                                        .foregroundColor(ApolloPalette.destructive.opacity(0.98))
                                         .frame(maxWidth: .infinity)
                                         .padding()
                                         .background(.ultraThinMaterial)
                                         .clipShape(RoundedRectangle(cornerRadius: 14))
                                         .overlay(
                                             RoundedRectangle(cornerRadius: 14)
-                                                .stroke(Color.red.opacity(0.34), lineWidth: 1)
+                                                .stroke(ApolloPalette.destructive.opacity(0.42), lineWidth: 1)
                                         )
                                 }
                             }
@@ -391,7 +377,7 @@ struct ConfigSlider: View {
                     }
                 }
             }
-            .tint(.white.opacity(0.92))
+            .tint(ApolloPalette.accentStrong)
         }
     }
 }
@@ -404,7 +390,7 @@ struct ToggleTile: View {
     var body: some View {
         HStack {
             Image(systemName: icon)
-                .foregroundColor(.blue.opacity(0.75))
+                .foregroundColor(isOn ? ApolloPalette.accentStrong : .white.opacity(0.58))
                 .frame(width: 24)
             Text(title)
                 .font(.subheadline)
@@ -412,7 +398,7 @@ struct ToggleTile: View {
             Spacer()
             Toggle("", isOn: $isOn)
                 .labelsHidden()
-                .tint(.white.opacity(0.9))
+                .tint(ApolloPalette.accentStrong)
         }
     }
 }
@@ -430,7 +416,7 @@ private extension View {
                 shape
                     .fill(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.10), Color.white.opacity(0.03)],
+                            colors: [ApolloPalette.accent.opacity(0.16), Color.white.opacity(0.03)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )

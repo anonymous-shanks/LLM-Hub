@@ -478,7 +478,7 @@ private extension View {
                 shape
                     .fill(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.10), Color.white.opacity(0.03)],
+                            colors: [ApolloPalette.accent.opacity(0.16), Color.white.opacity(0.03)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -571,10 +571,11 @@ private struct FeatureModelSettingsSheet: View {
                                     }
                                 }
                                 .pickerStyle(.menu)
+                                .tint(ApolloPalette.accentStrong)
                             }
 
                             HStack {
-                                Text(settings.localized("max_tokens"))
+                                Text(settings.localized("context_window_size"))
                                     .foregroundColor(.white)
                                 Spacer()
                                 Text("\(Int(maxTokens))")
@@ -586,11 +587,11 @@ private struct FeatureModelSettingsSheet: View {
                                     maxTokens = min(max(1, maxTokens), maxContextCap)
                                 }
                             }
-                            .tint(.white.opacity(0.92))
+                            .tint(ApolloPalette.accentStrong)
 
                             if selectedModelSupportsVision {
                                 Toggle(settings.localized(visionToggleTitleKey), isOn: $enableVision)
-                                    .tint(.white.opacity(0.9))
+                                    .tint(ApolloPalette.accentStrong)
                                     .foregroundColor(.white)
                             }
 
@@ -606,6 +607,7 @@ private struct FeatureModelSettingsSheet: View {
                                         }
                                     }
                                     .pickerStyle(.menu)
+                                    .tint(ApolloPalette.accentStrong)
                                 }
                             }
                         }
@@ -617,7 +619,7 @@ private struct FeatureModelSettingsSheet: View {
                                 .stroke(Color.white.opacity(0.14), lineWidth: 1)
                         )
 
-                        HStack(spacing: 10) {
+                        VStack(spacing: 10) {
                             Button {
                                 Task { await onLoad() }
                             } label: {
@@ -633,9 +635,8 @@ private struct FeatureModelSettingsSheet: View {
                                 .padding(.vertical, 12)
                                 .contentShape(Rectangle())
                             }
-                            .frame(maxWidth: .infinity)
                             .liquidGlassPrimaryButton(cornerRadius: 12)
-                            .tint(.white.opacity(0.92))
+                            .tint(ApolloPalette.accentStrong)
                             .disabled(isLoading || selectedModelName.isEmpty || isRefreshingModels)
 
                             if isSelectedModelLoaded {
@@ -650,16 +651,15 @@ private struct FeatureModelSettingsSheet: View {
                                     .padding(.vertical, 12)
                                     .contentShape(Rectangle())
                                 }
-                                .frame(maxWidth: .infinity)
                                 .background(
                                     RoundedRectangle(cornerRadius: 12)
-                                        .fill(Color.red.opacity(0.10))
+                                        .fill(ApolloPalette.destructive.opacity(0.10))
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color.red.opacity(0.9), lineWidth: 1)
+                                        .stroke(ApolloPalette.destructive.opacity(0.9), lineWidth: 1)
                                 )
-                                .foregroundStyle(Color.red.opacity(0.95))
+                                .foregroundStyle(ApolloPalette.destructive.opacity(0.98))
                                 .disabled(isLoading)
                             }
                         }
@@ -3688,16 +3688,15 @@ struct VibeCoderScreen: View {
     }
 
     private var contextWindowCap: Double {
-        let selectedCap = Double(max(1, selectedFeatureModel(named: selectedModelName)?.contextWindowSize ?? 0))
-        let loadedCap = Double(max(1, llm.loadedContextWindow ?? 0))
         let configuredCap = Double(max(1, llm.contextWindow))
-        return max(selectedCap, loadedCap, configuredCap, 1)
+        if let loadedContextWindow = llm.loadedContextWindow {
+            return Double(max(1, loadedContextWindow))
+        }
+        return configuredCap
     }
 
     private var contextBudgetForRing: Double {
-        // Keep the ring useful for normal chats even on very large-context models.
-        let generationBudget = Double(max(1, Int(maxTokens)))
-        return min(contextWindowCap, generationBudget)
+        contextWindowCap
     }
 
     private var approximateContextTokensUsed: Double {
@@ -3811,7 +3810,7 @@ struct VibeCoderScreen: View {
                                             Circle()
                                                 .trim(from: 0, to: contextUsageFractionDisplay)
                                                 .stroke(
-                                                    contextUsageFractionRaw < 0.90 ? Color.cyan : Color.orange,
+                                                    contextUsageFractionRaw < 0.90 ? ApolloPalette.accentStrong : ApolloPalette.warning,
                                                     style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
                                                 )
                                                 .rotationEffect(.degrees(-90))
@@ -5331,6 +5330,7 @@ private struct ImageGeneratorSettingsSheet: View {
                                 }
                             }
                             .pickerStyle(.menu)
+                            .tint(ApolloPalette.accentStrong)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
@@ -5343,6 +5343,7 @@ private struct ImageGeneratorSettingsSheet: View {
                         Text("\(settings.localized("image_generator_iterations")): \(Int(steps))")
                             .font(.headline)
                         Slider(value: $steps, in: 10...50, step: 1)
+                            .tint(ApolloPalette.accentStrong)
                     }
                     .padding()
                     .background(.regularMaterial)
@@ -5367,7 +5368,7 @@ private struct ImageGeneratorSettingsSheet: View {
                                     .frame(height: 50)
                             }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .liquidGlassPrimaryButton(cornerRadius: 12)
                         .disabled(availableModels.isEmpty || isLoading)
 
                         if isLoaded {
@@ -5379,7 +5380,15 @@ private struct ImageGeneratorSettingsSheet: View {
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 50)
                             }
-                            .buttonStyle(.bordered)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(ApolloPalette.destructive.opacity(0.10))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(ApolloPalette.destructive.opacity(0.9), lineWidth: 1)
+                            )
+                            .foregroundStyle(ApolloPalette.destructive.opacity(0.98))
                         }
                     }
                 }

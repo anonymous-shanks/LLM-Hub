@@ -39,42 +39,52 @@ struct ContentView: View {
                         onNavigateBack: { path.removeLast() }
                     )
                     .navigationBarBackButtonHidden(true)
+                    .enableSwipeBack()
                 case .models:
                     ModelDownloadScreen(onNavigateBack: { path.removeLast() })
                         .navigationBarBackButtonHidden(true)
+                        .enableSwipeBack()
                 case .settings:
                     SettingsScreen(
                         onNavigateBack: { path.removeLast() },
                         onNavigateToModels: { path.append(Screen.models) }
                     )
                     .navigationBarBackButtonHidden(true)
+                    .enableSwipeBack()
                 case .writingAid:
                     WritingAidScreen(onNavigateBack: { path.removeLast() })
                         .navigationBarBackButtonHidden(true)
+                        .enableSwipeBack()
                 case .translator:
                     TranslatorScreen(
                         onNavigateBack: { path.removeLast() },
                         onNavigateToModels: { path.append(Screen.models) }
                     )
                     .navigationBarBackButtonHidden(true)
+                    .enableSwipeBack()
                 case .transcriber:
                     TranscriberScreen(onNavigateBack: { path.removeLast() })
                         .navigationBarBackButtonHidden(true)
+                        .enableSwipeBack()
                 case .scamDetector:
                     ScamDetectorScreen(onNavigateBack: { path.removeLast() })
                         .navigationBarBackButtonHidden(true)
+                        .enableSwipeBack()
                 case .vibeCoder:
                     VibeCoderScreen(onNavigateBack: { path.removeLast() })
                         .navigationBarBackButtonHidden(true)
+                        .enableSwipeBack()
                 case .vibeVoice:
                     VibeVoiceScreen(onNavigateBack: { path.removeLast() })
                         .navigationBarBackButtonHidden(true)
+                        .enableSwipeBack()
                 case .imageGenerator:
                     ImageGeneratorScreen(
                         onNavigateBack: { path.removeLast() },
                         onNavigateToModels: { path.append(Screen.models) }
                     )
                     .navigationBarBackButtonHidden(true)
+                    .enableSwipeBack()
                 }
             }
         }

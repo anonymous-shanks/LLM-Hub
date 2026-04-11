@@ -18,7 +18,7 @@ struct SettingsScreen: View {
                 Section {
                     SettingsRow(
                         icon: "square.and.arrow.down.fill",
-                        iconColor: .indigo,
+                        iconColor: ApolloPalette.accentStrong,
                         titleKey: "download_models",
                         subtitleKey: "browse_download_models"
                     ) {
@@ -34,7 +34,7 @@ struct SettingsScreen: View {
                 Section {
                     SettingsToggleRow(
                         icon: "speaker.wave.2.fill",
-                        iconColor: .orange,
+                        iconColor: ApolloPalette.accentStrong,
                         title: settings.localized("auto_readout"),
                         subtitle: settings.localized("auto_readout_description"),
                         isOn: $settings.autoReadoutEnabled
@@ -44,7 +44,7 @@ struct SettingsScreen: View {
 
                     SettingsRow(
                         icon: "globe",
-                        iconColor: .blue,
+                        iconColor: ApolloPalette.accentStrong,
                         titleKey: "language",
                         subtitleString: settings.localized(settings.selectedLanguage.displayNameKey)
                     ) {
@@ -60,7 +60,7 @@ struct SettingsScreen: View {
                 Section {
                     SettingsRow(
                         icon: "info.circle.fill",
-                        iconColor: .blue,
+                        iconColor: ApolloPalette.accentStrong,
                         titleKey: "about",
                         subtitleKey: "app_information_contact"
                     ) { }
@@ -69,7 +69,7 @@ struct SettingsScreen: View {
 
                     SettingsRow(
                         icon: "doc.text.fill",
-                        iconColor: .gray,
+                        iconColor: ApolloPalette.accentStrong,
                         titleKey: "terms_of_service",
                         subtitleKey: "legal_terms_conditions"
                     ) { }
@@ -83,7 +83,7 @@ struct SettingsScreen: View {
                 Section {
                     SettingsRow(
                         icon: "chevron.left.forwardslash.chevron.right",
-                        iconColor: .gray,
+                        iconColor: ApolloPalette.accentStrong,
                         titleKey: "github_repository",
                         subtitleKey: "view_source_contribute"
                     ) {
@@ -145,7 +145,7 @@ struct LanguagePickerSheet: View {
                             Spacer()
                             if settings.selectedLanguage == lang {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.blue.opacity(0.9))
+                                    .foregroundColor(ApolloPalette.accentStrong)
                             }
                         }
                     }
@@ -178,6 +178,7 @@ struct SectionHeader: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
+                .foregroundColor(ApolloPalette.accentStrong)
             Text(settings.localized(titleKey))
         }
 
@@ -200,7 +201,13 @@ struct SettingsRow: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(iconColor.gradient)
+                    .fill(
+                        LinearGradient(
+                            colors: [ApolloPalette.accentSoft, ApolloPalette.accentMuted],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
                     .frame(width: 32, height: 32)
                     .overlay {
                         Image(systemName: icon)
@@ -255,7 +262,13 @@ struct SettingsToggleRow: View {
     var body: some View {
         HStack(spacing: 14) {
             RoundedRectangle(cornerRadius: 8)
-                .fill(iconColor.gradient)
+                .fill(
+                    LinearGradient(
+                        colors: [ApolloPalette.accentSoft, ApolloPalette.accentMuted],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
                 .frame(width: 32, height: 32)
                 .overlay {
                     Image(systemName: icon)
@@ -277,7 +290,7 @@ struct SettingsToggleRow: View {
 
             Toggle("", isOn: $isOn)
                 .labelsHidden()
-                .tint(.white.opacity(0.9))
+                .tint(ApolloPalette.accentStrong)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 12)

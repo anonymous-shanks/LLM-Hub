@@ -717,6 +717,11 @@
 "home_section_utilities" = "Utilitaires";
 "feature_vibevoice" = "Chat vocal";
 "feature_vibevoice_desc" = "Chat vocal avec IA en local";
+"vibevoice_listening" = "Listening...";
+"vibevoice_responding" = "Thinking...";
+"vibevoice_speaking" = "Speaking...";
+"vibevoice_tap_to_start" = "Tap to start voice chat";
+"vibevoice_tap_to_stop" = "Tap to stop";
 "chat_now" = "Discuter maintenant";
 "model_system_prompt_label" = "Invite système (par modèle)";
 "model_system_prompt_hint" = "S’applique automatiquement lorsque ce modèle génère une réponse.";

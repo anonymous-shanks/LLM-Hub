@@ -685,4 +685,9 @@
 "home_section_utilities" = "Utilitários";
 "feature_vibevoice" = "Chat de voz";
 "feature_vibevoice_desc" = "Chat de voz com IA local";
+"vibevoice_listening" = "Listening...";
+"vibevoice_responding" = "Thinking...";
+"vibevoice_speaking" = "Speaking...";
+"vibevoice_tap_to_start" = "Tap to start voice chat";
+"vibevoice_tap_to_stop" = "Tap to stop";
 "chat_now" = "Conversar agora";

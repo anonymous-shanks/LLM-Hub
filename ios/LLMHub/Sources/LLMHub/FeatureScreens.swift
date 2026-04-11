@@ -532,16 +532,6 @@ private struct FeatureModelSettingsSheet: View {
             ?? selectedFeatureModel(named: selectedModelName)
     }
 
-    private var selectedModelSupportsThinking: Bool {
-        guard let model = selectedModel else { return false }
-        let loweredName = model.name.lowercased()
-        return model.supportsThinking
-            || loweredName.contains("thinking")
-            || loweredName.contains("reasoning")
-            || loweredName.contains("gpt-oss")
-            || loweredName.contains("gpt_oss")
-    }
-
     private var selectedModelSupportsVision: Bool {
         guard supportsVisionToggle, let model = selectedModel, model.supportsVision else { return false }
         return visionAvailableCheck?(model) ?? true
@@ -598,11 +588,6 @@ private struct FeatureModelSettingsSheet: View {
                             }
                             .tint(.white.opacity(0.92))
 
-                            if selectedModelSupportsThinking {
-                                Toggle(settings.localized("enable_thinking"), isOn: $enableThinking)
-                                    .tint(.white.opacity(0.9))
-                                    .foregroundColor(.white)
-                            }
                             if selectedModelSupportsVision {
                                 Toggle(settings.localized(visionToggleTitleKey), isOn: $enableVision)
                                     .tint(.white.opacity(0.9))
@@ -709,7 +694,7 @@ private struct FeatureModelSettingsSheet: View {
     private func refreshModelsIfNeeded() async {
         if !models.isEmpty { return }
         isRefreshingModels = true
-        await syncRunAnywhereModelDiscovery()
+        try? RunAnywhere.initialize(environment: .development)
         let loaded = downloadableFeatureModels().filter { model in
             modelFilter?(model) ?? true
         }
@@ -723,9 +708,7 @@ private struct FeatureModelSettingsSheet: View {
     }
 
     private func normalizeToggleStatesForSelectedModel() {
-        if !selectedModelSupportsThinking {
-            enableThinking = false
-        }
+        enableThinking = false
         if supportsVisionToggle && !selectedModelSupportsVision {
             enableVision = false
         }
@@ -734,7 +717,7 @@ private struct FeatureModelSettingsSheet: View {
 
 @available(iOS 17.0, *)
 private actor SpeechEngine {
-    private let audioEngine = AVAudioEngine()
+    private var audioEngine: AVAudioEngine?
     private let speechRecognizer = SFSpeechRecognizer()
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
@@ -744,6 +727,9 @@ private actor SpeechEngine {
     private var isStreaming = false
 
     func start(onResult: @escaping @Sendable (SFSpeechRecognitionResult) -> Void, onError: @escaping @Sendable (Error) -> Void) throws {
+        // Clean up any prior session first
+        stop()
+
         self.onResult = onResult
         self.onError = onError
         self.isStreaming = true
@@ -752,11 +738,23 @@ private actor SpeechEngine {
         try session.setCategory(.record, mode: .measurement, options: .duckOthers)
         try session.setActive(true, options: .notifyOthersOnDeactivation)
 
-        try startNewTask()
-        
-        let inputNode = audioEngine.inputNode
+        // Create a FRESH AVAudioEngine each time. The old engine's inputNode
+        // permanently caches a stale format (0 Hz) after the audio session
+        // switches between .record and .playback. No amount of reset() fixes it.
+        let engine = AVAudioEngine()
+        self.audioEngine = engine
+
+        let inputNode = engine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.removeTap(onBus: 0)
+        guard recordingFormat.sampleRate > 0 && recordingFormat.channelCount > 0 else {
+            isStreaming = false
+            self.audioEngine = nil
+            throw NSError(domain: "SpeechEngine", code: -2,
+                          userInfo: [NSLocalizedDescriptionKey: "Audio input format invalid: \(recordingFormat.sampleRate)Hz, \(recordingFormat.channelCount)ch"])
+        }
+
+        try startNewTask()
+
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             Task { [weak self] in
                 guard let self = self else { return }
@@ -764,8 +762,8 @@ private actor SpeechEngine {
             }
         }
         
-        audioEngine.prepare()
-        try audioEngine.start()
+        engine.prepare()
+        try engine.start()
     }
 
     private func append(_ buffer: AVAudioPCMBuffer) {
@@ -806,13 +804,15 @@ private actor SpeechEngine {
 
     func stop() {
         isStreaming = false
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        if let engine = audioEngine {
+            engine.stop()
+            engine.inputNode.removeTap(onBus: 0)
+        }
+        audioEngine = nil
         recognitionRequest?.endAudio()
         recognitionTask?.cancel()
         recognitionTask = nil
         recognitionRequest = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 }
 
@@ -1388,6 +1388,625 @@ struct TranscriberScreen: View {
     }
 }
 
+// MARK: - VibeVoice
+
+@available(iOS 17.0, *)
+@MainActor
+private final class IOSVibeVoiceTranscriber: NSObject, ObservableObject {
+    @Published var transcript: String = ""
+    @Published var isRecording: Bool = false
+    @Published var isPreparing: Bool = false
+
+    private var previousHypothesis: String = ""
+    private var sessionHistory: [String] = []
+    private var silenceTask: Task<Void, Never>?
+    private var utteranceHandler: ((String) -> Void)?
+
+    private let engine = SpeechEngine()
+
+    private func logError(_ message: String) {
+        NSLog("[LLMHub][VibeVoice] \(message)")
+    }
+
+    func startListening(onUtterance: @escaping (String) -> Void) async {
+        logError("startListening() called")
+        cancelListening()
+        isPreparing = true
+        transcript = ""
+        previousHypothesis = ""
+        sessionHistory = []
+        utteranceHandler = onUtterance
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
+
+            let status = await withCheckedContinuation { continuation in
+                SFSpeechRecognizer.requestAuthorization { status in
+                    continuation.resume(returning: status)
+                }
+            }
+            let micAuthorized = await AVAudioApplication.requestRecordPermission()
+
+            guard status == .authorized && micAuthorized else {
+                await self.logError("Permissions denied: speech=\(status.rawValue), mic=\(micAuthorized)")
+                await MainActor.run {
+                    self.isPreparing = false
+                    self.isRecording = false
+                }
+                return
+            }
+
+            do {
+                try await self.engine.start(onResult: { result in
+                    let text = result.bestTranscription.formattedString
+                    let isFinal = result.isFinal
+
+                    Task { @MainActor in
+                        self.processTranscriptionResult(text: text, isFinal: isFinal, prefix: "Voice")
+                        self.rescheduleSilenceDetection()
+                    }
+                }, onError: { error in
+                    Task { @MainActor in
+                        let nsError = error as NSError
+                        // 301 = cancelled by us, ignore silently
+                        guard nsError.code != 301 else { return }
+                        self.logError("Engine error: \(error.localizedDescription)")
+                        // Reset recording state so the listen cycle can restart
+                        self.isRecording = false
+                        self.isPreparing = false
+                    }
+                })
+
+                await MainActor.run {
+                    self.isRecording = true
+                    self.isPreparing = false
+                }
+            } catch {
+                await self.logError("Audio engine failed: \(error.localizedDescription)")
+                await MainActor.run {
+                    self.isPreparing = false
+                    self.isRecording = false
+                }
+            }
+        }
+    }
+
+    func stopListening() async {
+        silenceTask?.cancel()
+        silenceTask = nil
+        utteranceHandler = nil
+        await engine.stop()
+        transcript = ""
+        previousHypothesis = ""
+        sessionHistory = []
+        isRecording = false
+        isPreparing = false
+    }
+
+    func cancelListening() {
+        silenceTask?.cancel()
+        silenceTask = nil
+        utteranceHandler = nil
+        Task {
+            await engine.stop()
+        }
+        transcript = ""
+        previousHypothesis = ""
+        sessionHistory = []
+        isRecording = false
+        isPreparing = false
+    }
+
+    private func rescheduleSilenceDetection() {
+        guard isRecording else { return }
+        silenceTask?.cancel()
+        silenceTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 1_800_000_000)
+                guard !Task.isCancelled else { return }
+                await self?.finishCurrentUtterance()
+            } catch {}
+        }
+    }
+
+    private func finishCurrentUtterance() async {
+        let finalTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        silenceTask?.cancel()
+        silenceTask = nil
+        await engine.stop()
+        isRecording = false
+        isPreparing = false
+        transcript = ""
+        previousHypothesis = ""
+        sessionHistory = []
+
+        guard !finalTranscript.isEmpty else { return }
+        let handler = utteranceHandler
+        utteranceHandler = nil
+        handler?(finalTranscript)
+    }
+
+    private func processTranscriptionResult(text: String, isFinal: Bool, prefix: String) {
+        if isFinal {
+            let finalToCommit = text.isEmpty ? self.previousHypothesis : text
+
+            if !finalToCommit.isEmpty {
+                self.logError("[\(prefix)] committing final segment: \"\(finalToCommit.prefix(50))...\"")
+                self.addTextToHistory(finalToCommit)
+            }
+            self.previousHypothesis = ""
+        } else {
+            if !text.isEmpty && !self.previousHypothesis.isEmpty &&
+               text.count < self.previousHypothesis.count / 2 &&
+               !self.previousHypothesis.lowercased().hasPrefix(text.lowercased()) {
+
+                self.logError("[\(prefix)] reset detected! Committing hypothesis: \"\(self.previousHypothesis.prefix(50))...\"")
+                self.addTextToHistory(self.previousHypothesis)
+            }
+            self.previousHypothesis = text
+        }
+
+        let combined = (self.sessionHistory + [self.previousHypothesis])
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        self.transcript = combined.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func addTextToHistory(_ text: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if clean.isEmpty { return }
+
+        let newLower = clean.lowercased()
+
+        if let lastIndex = sessionHistory.indices.last {
+            let lastLower = sessionHistory[lastIndex].lowercased()
+
+            if newLower.contains(lastLower) {
+                sessionHistory[lastIndex] = clean
+                return
+            }
+
+            if lastLower.contains(newLower) {
+                return
+            }
+        }
+
+        sessionHistory.append(clean)
+    }
+}
+
+private enum VibeVoiceState: Equatable {
+    case idle, listening, responding, speaking
+}
+
+@available(iOS 17.0, *)
+private struct IOS17VibeVoiceScreen: View {
+    @EnvironmentObject var settings: AppSettings
+    @ObservedObject private var llm = LLMBackend.shared
+    @ObservedObject private var ttsManager = OnDeviceTtsManager.shared
+    @AppStorage("feature_vibevoice_model_name") private var selectedModelName: String = ""
+    @AppStorage("feature_vibevoice_max_tokens") private var maxTokens: Double = 512
+    @State private var voiceState: VibeVoiceState = .idle
+    @State private var isChatActive = false
+    @State private var latestReply = ""
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+    @State private var showSettings = false
+    @State private var generationTask: Task<Void, Never>?
+    @State private var conversationHistory: [(role: String, content: String)] = []
+    @StateObject private var transcriber = IOSVibeVoiceTranscriber()
+
+    private let ttsKey = "vibevoice-reply"
+
+    let onNavigateBack: () -> Void
+
+    private var isCurrentModelLoaded: Bool {
+        llm.isLoaded && llm.currentlyLoadedModel == selectedModelName
+    }
+
+    var body: some View {
+        Group {
+            if !isCurrentModelLoaded {
+                modelNotLoadedView
+            } else {
+                chatView
+            }
+        }
+        .navigationTitle(settings.localized("feature_vibevoice"))
+        .navigationBarTitleDisplayMode(.inline)
+        .apolloScreenBackground()
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    stopAll()
+                    llm.unloadModel()
+                    onNavigateBack()
+                } label: {
+                    Image(systemName: "arrow.left")
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showSettings = true } label: {
+                    Image(systemName: "slider.horizontal.3")
+                }
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            FeatureModelSettingsSheet(
+                selectedModelName: $selectedModelName,
+                maxTokens: $maxTokens,
+                enableThinking: .constant(false),
+                enableVision: .constant(false),
+                isLoading: $isLoading,
+                errorMessage: $errorMessage,
+                supportsVisionToggle: false,
+                visionToggleTitleKey: "scam_detector_enable_vision",
+                visionAvailableCheck: nil,
+                writingMode: nil,
+                modelFilter: isNonTranslatorFeatureModel,
+                onLoad: { await ensureModelLoaded(force: false) },
+                onUnload: { llm.unloadModel() }
+            )
+        }
+        .onAppear {
+            Task {
+                try? RunAnywhere.initialize(environment: .development)
+                let available = downloadableFeatureModels().filter(isNonTranslatorFeatureModel)
+                // Only set a default if no model was previously selected.
+                // @AppStorage preserves the last used model across launches.
+                if selectedModelName.isEmpty {
+                    selectedModelName = available.first?.name ?? ""
+                }
+            }
+        }
+        .onDisappear {
+            stopAll()
+            generationTask?.cancel()
+            generationTask = nil
+            llm.unloadModel()
+        }
+        .onChange(of: ttsManager.isSpeaking) { oldValue, newValue in
+            guard isChatActive else { return }
+            if oldValue && !newValue && voiceState == .speaking {
+                voiceState = .idle
+                Task { @MainActor in
+                    // 700ms: give audio hardware time to switch from playback → record
+                    try? await Task.sleep(nanoseconds: 700_000_000)
+                    guard isChatActive && isCurrentModelLoaded else { return }
+                    await startListeningCycle()
+                }
+            }
+        }
+        .onChange(of: transcriber.isRecording) { oldValue, newValue in
+            if oldValue && !newValue && !transcriber.isPreparing {
+                if voiceState == .listening {
+                    voiceState = .idle
+                }
+                // Auto-restart the listen cycle if chat is still active
+                // (covers "No speech detected" and other engine errors)
+                guard isChatActive && (voiceState == .idle || voiceState == .listening) else { return }
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 700_000_000)
+                    guard isChatActive && isCurrentModelLoaded && voiceState == .idle else { return }
+                    await startListeningCycle()
+                }
+            }
+        }
+    }
+
+    // MARK: - Model Not Loaded
+
+    @ViewBuilder
+    private var modelNotLoadedView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "waveform.circle")
+                .font(.system(size: 48, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text(settings.localized("scam_detector_load_model"))
+                .font(.title3.weight(.bold))
+            Text(settings.localized("scam_detector_load_model_desc"))
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.7))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            Button {
+                showSettings = true
+            } label: {
+                HStack {
+                    Spacer()
+                    Text(settings.localized("feature_settings_title"))
+                    Spacer()
+                }
+                .frame(height: 50)
+                .contentShape(Rectangle())
+            }
+            .frame(maxWidth: 260)
+            .liquidGlassPrimaryButton(cornerRadius: 12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Chat View
+
+    @ViewBuilder
+    private var chatView: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            // Animated globe
+            TimelineView(.animation) { timeline in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                let period: Double = voiceState == .listening ? 0.52 : voiceState == .responding ? 0.9 : 1.8
+                let phase = (sin(t * .pi / period) + 1.0) / 2.0
+                let maxGlow: Double = voiceState == .listening ? 0.75 : voiceState == .responding ? 0.48 : 0.28
+                let glow = 0.22 + (maxGlow - 0.22) * phase
+                let maxScale: CGFloat = voiceState == .listening ? 1.08 : voiceState == .responding ? 1.04 : 1.0
+                let scale = 1.0 + (maxScale - 1.0) * CGFloat(phase)
+
+                ZStack {
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    Color(hex: "F7EFE1").opacity(glow),
+                                    Color(hex: "69C6FF").opacity(glow),
+                                    Color(hex: "1478F4").opacity(glow * 0.4)
+                                ],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: 124
+                            )
+                        )
+                        .frame(width: 248, height: 248)
+
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    Color(hex: "E5F8FF"),
+                                    Color(hex: "4FAAF8"),
+                                    Color(hex: "0E67E8")
+                                ],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: 109
+                            )
+                        )
+                        .frame(width: 218, height: 218)
+                        .scaleEffect(scale)
+                        .overlay {
+                            Image(systemName: globeIcon)
+                                .font(.system(size: 72, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.92))
+                        }
+                        .contentShape(Circle())
+                        .onTapGesture { handleGlobeTap() }
+                }
+            }
+            .frame(width: 248, height: 248)
+
+            // Status text
+            Text(statusText)
+                .font(.headline)
+                .foregroundStyle(.white.opacity(0.85))
+                .multilineTextAlignment(.center)
+                .padding(.top, 24)
+
+            // Live partial transcript while listening
+            if !transcriber.transcript.isEmpty && voiceState == .listening {
+                Text(transcriber.transcript)
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                    .padding(.top, 8)
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.2), value: transcriber.transcript)
+            }
+
+            // Latest AI reply card
+            if !latestReply.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(latestReply)
+                        .font(.body)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18)
+                                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                        )
+
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .animation(.spring(duration: 0.3), value: latestReply)
+            }
+
+            Spacer()
+        }
+        .padding(.bottom, 20)
+    }
+
+    // MARK: - Computed
+
+    private var globeIcon: String {
+        if !isChatActive { return "mic.circle" }
+        switch voiceState {
+        case .listening: return "mic.fill"
+        case .responding: return "ellipsis.circle"
+        case .speaking: return "speaker.wave.2.fill"
+        case .idle: return "mic"
+        }
+    }
+
+    private var statusText: String {
+        if !isChatActive { return settings.localized("vibevoice_tap_to_start") }
+        switch voiceState {
+        case .listening: return settings.localized("vibevoice_listening")
+        case .responding: return settings.localized("vibevoice_responding")
+        case .speaking: return settings.localized("vibevoice_speaking")
+        case .idle: return settings.localized("vibevoice_tap_to_start")
+        }
+    }
+
+    // MARK: - Actions
+
+    private func handleGlobeTap() {
+        if isChatActive {
+            isChatActive = false
+            stopAll()
+        } else {
+            isChatActive = true
+            Task { @MainActor in
+                await startListeningCycle()
+            }
+        }
+    }
+
+    private func startListeningCycle() async {
+        guard isChatActive && isCurrentModelLoaded else { return }
+
+        voiceState = .listening
+        await transcriber.startListening { text in
+            Task { @MainActor in
+                guard self.isChatActive else { return }
+                await self.handleTranscript(text)
+            }
+        }
+
+        if !transcriber.isRecording && !transcriber.isPreparing {
+            voiceState = .idle
+        }
+    }
+
+    private func handleTranscript(_ text: String) async {
+        guard isChatActive else { return }
+        voiceState = .responding
+        latestReply = ""
+
+        await ensureModelLoaded(force: false)
+        guard llm.isLoaded && isChatActive else {
+            voiceState = .idle
+            return
+        }
+
+        let systemPrompt = """
+            You are VibeVoice, a natural real-time voice conversation assistant.
+            Keep responses short, conversational, and useful.
+            Match response length to the user's request: brief for simple questions, fuller for detail requests.
+            Do not repeat the user's words verbatim.
+            Do not output role labels like 'assistant:' or 'user:'.
+            If the input is unclear, ask one brief clarification question.
+            """
+
+        // Build multi-turn prompt from conversation history.
+        // LlamaCPP's chat template applies system+user roles, but we need
+        // all prior turns in the prompt for the KV cache prefix to match.
+        conversationHistory.append((role: "user", content: text))
+
+        // Trim history if it gets too long (keep last ~8 turns to fit context window)
+        let maxTurns = 8
+        if conversationHistory.count > maxTurns {
+            conversationHistory = Array(conversationHistory.suffix(maxTurns))
+        }
+
+        let multiTurnPrompt = conversationHistory
+            .map { "\($0.role == "user" ? "User" : "Assistant"): \($0.content)" }
+            .joined(separator: "\n")
+            + "\nAssistant:"
+
+        generationTask = Task {
+            do {
+                try await llm.generate(
+                    prompt: multiTurnPrompt,
+                    systemPrompt: systemPrompt,
+                    maxTokensOverride: Int(maxTokens)
+                ) { content, _, _ in
+                    Task { @MainActor in
+                        self.latestReply = sanitizeModelOutputText(content)
+                    }
+                }
+            } catch {
+                NSLog("[LLMHub][VibeVoice] LLM error: \(error.localizedDescription)")
+            }
+            await MainActor.run {
+                self.generationTask = nil
+                guard self.isChatActive else { return }
+                let reply = self.latestReply.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !reply.isEmpty {
+                    // Store assistant reply in conversation history
+                    self.conversationHistory.append((role: "assistant", content: reply))
+                    self.voiceState = .speaking
+                    self.ttsManager.speak(reply, fallbackLanguage: self.settings.selectedLanguage, key: self.ttsKey)
+                } else {
+                    self.voiceState = .idle
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        guard self.isChatActive && self.isCurrentModelLoaded else { return }
+                        await self.startListeningCycle()
+                    }
+                }
+            }
+        }
+    }
+
+    private func ensureModelLoaded(force: Bool) async {
+        guard let model = selectedFeatureModel(named: selectedModelName) else {
+            errorMessage = settings.localized("writing_aid_no_model")
+            return
+        }
+        isLoading = true
+        defer { isLoading = false }
+
+        let modelContextCap = model.contextWindowSize > 0 ? model.contextWindowSize : 4096
+        let effectiveContext = min(max(1, Int(maxTokens)), modelContextCap)
+        let shouldReload = force
+            || llm.currentlyLoadedModel != model.name
+            || llm.loadedContextWindow != effectiveContext
+
+        llm.maxTokens = min(Int(maxTokens), effectiveContext)
+        llm.contextWindow = effectiveContext
+        llm.enableVision = false
+        llm.enableAudio = false
+        llm.enableThinking = false
+
+        do {
+            if shouldReload {
+                try await llm.loadModel(model)
+            }
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func stopAll() {
+        generationTask?.cancel()
+        generationTask = nil
+        ttsManager.stop()
+        voiceState = .idle
+        conversationHistory = []
+        transcriber.cancelListening()
+    }
+}
+
+struct VibeVoiceScreen: View {
+    @EnvironmentObject var settings: AppSettings
+    let onNavigateBack: () -> Void
+
+    var body: some View {
+        if #available(iOS 17.0, *) {
+            IOS17VibeVoiceScreen(onNavigateBack: onNavigateBack)
+        }
+    }
+}
+
 struct WritingAidScreen: View {
     @EnvironmentObject var settings: AppSettings
     @ObservedObject private var ttsManager = OnDeviceTtsManager.shared
@@ -1594,7 +2213,7 @@ struct WritingAidScreen: View {
                 visionAvailableCheck: nil,
                 writingMode: selectedModeBinding,
                 modelFilter: isNonTranslatorFeatureModel,
-                onLoad: { await ensureModelLoaded(force: true) },
+                onLoad: { await ensureModelLoaded(force: false) },
                 onUnload: { llm.unloadModel() }
             )
         }
@@ -1668,6 +2287,10 @@ struct WritingAidScreen: View {
 
         let modelContextCap = model.contextWindowSize > 0 ? model.contextWindowSize : 4096
         let effectiveContext = min(max(1, Int(maxTokens)), modelContextCap)
+        let shouldReload = force
+            || llm.currentlyLoadedModel != model.name
+            || llm.loadedContextWindow != effectiveContext
+
         llm.maxTokens = min(Int(maxTokens), effectiveContext)
         llm.contextWindow = effectiveContext
         llm.enableVision = false
@@ -1675,7 +2298,7 @@ struct WritingAidScreen: View {
         llm.enableThinking = enableThinking
 
         do {
-            if force || llm.currentlyLoadedModel != model.name {
+            if shouldReload {
                 try await llm.loadModel(model)
             }
             errorMessage = nil
@@ -1812,7 +2435,7 @@ struct TranslatorScreen: View {
                 visionAvailableCheck: translatorHasDownloadedVisionProjector,
                 writingMode: nil,
                 modelFilter: isTranslatorSupportedModel,
-                onLoad: { await ensureModelLoaded(force: true) },
+                onLoad: { await ensureModelLoaded(force: false) },
                 onUnload: { llm.unloadModel() }
             )
         }
@@ -2243,6 +2866,10 @@ struct TranslatorScreen: View {
 
         let modelContextCap = model.contextWindowSize > 0 ? model.contextWindowSize : 2048
         let effectiveContext = min(max(1, Int(maxTokens)), modelContextCap)
+        let shouldReload = force
+            || llm.currentlyLoadedModel != model.name
+            || llm.loadedContextWindow != effectiveContext
+
         llm.maxTokens = min(Int(maxTokens), effectiveContext)
         llm.contextWindow = effectiveContext
         llm.temperature = 0.2
@@ -2252,7 +2879,7 @@ struct TranslatorScreen: View {
         llm.enableThinking = false
 
         do {
-            if force || llm.currentlyLoadedModel != model.name {
+            if shouldReload {
                 try await llm.loadModel(model)
             }
             errorMessage = nil
@@ -2574,7 +3201,7 @@ struct ScamDetectorScreen: View {
                 visionAvailableCheck: hasDownloadedVisionProjector,
                 writingMode: nil,
                 modelFilter: isNonTranslatorFeatureModel,
-                onLoad: { await ensureModelLoaded(force: true) },
+                onLoad: { await ensureModelLoaded(force: false) },
                 onUnload: { llm.unloadModel() }
             )
         }
@@ -2728,6 +3355,10 @@ struct ScamDetectorScreen: View {
 
         let modelContextCap = model.contextWindowSize > 0 ? model.contextWindowSize : 4096
         let effectiveContext = min(max(1, Int(maxTokens)), modelContextCap)
+        let shouldReload = force
+            || llm.currentlyLoadedModel != model.name
+            || llm.loadedContextWindow != effectiveContext
+
         llm.maxTokens = min(Int(maxTokens), effectiveContext)
         llm.contextWindow = effectiveContext
         llm.enableVision = enableVision
@@ -2735,7 +3366,7 @@ struct ScamDetectorScreen: View {
         llm.enableThinking = enableThinking
 
         do {
-            if force || llm.currentlyLoadedModel != model.name {
+            if shouldReload {
                 try await llm.loadModel(model)
             }
             errorMessage = nil
@@ -3486,7 +4117,7 @@ struct VibeCoderScreen: View {
                 visionAvailableCheck: nil,
                 writingMode: nil,
                 modelFilter: isNonTranslatorFeatureModel,
-                onLoad: { await ensureModelLoaded(force: true) },
+                onLoad: { await ensureModelLoaded(force: false) },
                 onUnload: { llm.unloadModel() }
             )
         }
@@ -3873,6 +4504,10 @@ struct VibeCoderScreen: View {
 
         let modelContextCap = model.contextWindowSize > 0 ? model.contextWindowSize : 4096
         let effectiveContext = min(max(1, Int(maxTokens)), modelContextCap)
+        let shouldReload = force
+            || llm.currentlyLoadedModel != model.name
+            || llm.loadedContextWindow != effectiveContext
+
         llm.maxTokens = min(Int(maxTokens), effectiveContext)
         llm.contextWindow = effectiveContext
         llm.enableVision = false
@@ -3880,7 +4515,7 @@ struct VibeCoderScreen: View {
         llm.enableThinking = enableThinking
 
         do {
-            if force || llm.currentlyLoadedModel != model.name {
+            if shouldReload {
                 try await llm.loadModel(model)
             }
             errorMessage = nil

@@ -335,9 +335,12 @@ public enum RunAnywhere {
                 logger.info("Continuing SDK init in offline mode – local models will be available")
             }
 
-            // Step 1.5: Flush any queued telemetry events (may be no-op if HTTP unconfigured)
-            CppBridge.Telemetry.flush()
-            logger.debug("Attempted telemetry flush (may be no-op if HTTP unconfigured)")
+            // Step 1.5: Flush queued telemetry without blocking service readiness.
+            Task.detached(priority: .utility) {
+                CppBridge.Telemetry.flush()
+                SDKLogger(category: "RunAnywhere.Services")
+                    .debug("Attempted telemetry flush (background)")
+            }
         }
 
         // Step 2: Initialize C++ state
@@ -362,12 +365,16 @@ public enum RunAnywhere {
             logger.debug("Model paths base directory set")
         }
 
-        // Step 5: Register device via CppBridge (C++ handles all business logic)
-        do {
-            try await CppBridge.Device.registerIfNeeded(environment: environment)
-            logger.debug("Device registration check completed")
-        } catch {
-            logger.warning("Device registration failed (non-critical): \(error.localizedDescription)")
+        // Step 5: Register device in background. This is explicitly non-critical and
+        // should not delay local model use when the network is unavailable.
+        Task.detached(priority: .utility) {
+            let logger = SDKLogger(category: "RunAnywhere.Services")
+            do {
+                try await CppBridge.Device.registerIfNeeded(environment: environment)
+                logger.debug("Device registration check completed")
+            } catch {
+                logger.warning("Device registration failed (non-critical): \(error.localizedDescription)")
+            }
         }
 
         // Step 6: Discover already-downloaded models on file system

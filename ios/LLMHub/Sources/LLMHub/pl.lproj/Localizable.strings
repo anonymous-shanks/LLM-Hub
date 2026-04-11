@@ -730,6 +730,11 @@
 "home_section_utilities" = "Narzędzia pomocnicze";
 "feature_vibevoice" = "Czat głosowy";
 "feature_vibevoice_desc" = "Lokalny czat głosowy z AI";
+"vibevoice_listening" = "Listening...";
+"vibevoice_responding" = "Thinking...";
+"vibevoice_speaking" = "Speaking...";
+"vibevoice_tap_to_start" = "Tap to start voice chat";
+"vibevoice_tap_to_stop" = "Tap to stop";
 "chat_now" = "Czatuj teraz";
 "model_system_prompt_label" = "Prompt systemowy (na model)";
 "model_system_prompt_hint" = "Stosowany automatycznie, gdy ten model generuje odpowiedź.";

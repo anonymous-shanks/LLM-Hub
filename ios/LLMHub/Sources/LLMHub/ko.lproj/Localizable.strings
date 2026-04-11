@@ -730,6 +730,11 @@
 "home_section_utilities" = "유틸리티";
 "feature_vibevoice" = "음성 채팅";
 "feature_vibevoice_desc" = "로컬 AI와 음성 채팅";
+"vibevoice_listening" = "Listening...";
+"vibevoice_responding" = "Thinking...";
+"vibevoice_speaking" = "Speaking...";
+"vibevoice_tap_to_start" = "Tap to start voice chat";
+"vibevoice_tap_to_stop" = "Tap to stop";
 "chat_now" = "지금 채팅";
 "model_system_prompt_label" = "시스템 프롬프트(모델별)";
 "model_system_prompt_hint" = "이 모델이 응답을 생성할 때 자동으로 적용됩니다.";

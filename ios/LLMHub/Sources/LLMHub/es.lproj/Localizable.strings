@@ -701,6 +701,11 @@
 "home_section_utilities" = "Utilidades";
 "feature_vibevoice" = "Chat de voz";
 "feature_vibevoice_desc" = "Chat de voz con IA local";
+"vibevoice_listening" = "Listening...";
+"vibevoice_responding" = "Thinking...";
+"vibevoice_speaking" = "Speaking...";
+"vibevoice_tap_to_start" = "Tap to start voice chat";
+"vibevoice_tap_to_stop" = "Tap to stop";
 "chat_now" = "Chatear ahora";
 "model_system_prompt_label" = "Prompt del sistema (por modelo)";
 "model_system_prompt_hint" = "Se aplica automáticamente cuando este modelo genera una respuesta.";

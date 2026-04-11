@@ -730,6 +730,11 @@
 "home_section_utilities" = "ユーティリティ";
 "feature_vibevoice" = "音声チャット";
 "feature_vibevoice_desc" = "ローカルAIとの音声チャット";
+"vibevoice_listening" = "Listening...";
+"vibevoice_responding" = "Thinking...";
+"vibevoice_speaking" = "Speaking...";
+"vibevoice_tap_to_start" = "Tap to start voice chat";
+"vibevoice_tap_to_stop" = "Tap to stop";
 "chat_now" = "今すぐチャット";
 "model_system_prompt_label" = "システムプロンプト（モデルごと）";
 "model_system_prompt_hint" = "このモデルが応答を生成する際に自動で適用されます。";

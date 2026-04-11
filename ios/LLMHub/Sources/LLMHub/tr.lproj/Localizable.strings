@@ -730,6 +730,11 @@
 "home_section_utilities" = "Yardımcılar";
 "feature_vibevoice" = "Sesli sohbet";
 "feature_vibevoice_desc" = "Yapay zeka ile yerel sesli sohbet";
+"vibevoice_listening" = "Listening...";
+"vibevoice_responding" = "Thinking...";
+"vibevoice_speaking" = "Speaking...";
+"vibevoice_tap_to_start" = "Tap to start voice chat";
+"vibevoice_tap_to_stop" = "Tap to stop";
 "chat_now" = "Şimdi sohbet et";
 "model_system_prompt_label" = "Sistem istemi (model başına)";
 "model_system_prompt_hint" = "Bu model yanıt oluşturduğunda otomatik olarak uygulanır.";

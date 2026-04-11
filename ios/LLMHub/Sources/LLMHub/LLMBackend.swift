@@ -485,7 +485,6 @@ class LLMBackend: ObservableObject {
             registerModel(model, contextLengthOverride: effectiveContext)
             await RunAnywhere.flushPendingRegistrations()
             _ = try? migrateLegacyModelIfNeeded(model)
-            _ = await RunAnywhere.discoverDownloadedModels()
 
             // Only local load here. Downloads are handled by the model download screen.
             guard isModelAvailableLocally(model) else {
@@ -500,6 +499,19 @@ class LLMBackend: ObservableObject {
                 modelId: runAnywhereModelId,
                 framework: framework(for: model)
             ), let ggufFile = listGGUFFiles(in: folderURL).first {
+                let registeredModelInfo = ModelInfo(
+                    id: runAnywhereModelId,
+                    name: model.name,
+                    category: model.supportsVision ? .multimodal : .language,
+                    format: .gguf,
+                    framework: framework(for: model),
+                    downloadURL: URL(string: model.url),
+                    localPath: folderURL,
+                    contextLength: effectiveContext,
+                    supportsThinking: model.supportsThinking
+                )
+                try? await CppBridge.ModelRegistry.shared.save(registeredModelInfo)
+
                 let pathModelInfo = ModelInfo(
                     id: ggufFile.path,
                     name: model.name,

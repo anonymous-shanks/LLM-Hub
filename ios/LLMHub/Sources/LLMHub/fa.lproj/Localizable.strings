@@ -730,6 +730,11 @@
 "home_section_utilities" = "ابزارهای کمکی";
 "feature_vibevoice" = "چت صوتی";
 "feature_vibevoice_desc" = "چت صوتی با هوش مصنوعی به‌صورت محلی";
+"vibevoice_listening" = "Listening...";
+"vibevoice_responding" = "Thinking...";
+"vibevoice_speaking" = "Speaking...";
+"vibevoice_tap_to_start" = "Tap to start voice chat";
+"vibevoice_tap_to_stop" = "Tap to stop";
 "chat_now" = "اکنون چت کنید";
 "model_system_prompt_label" = "پرامپت سیستم (برای هر مدل)";
 "model_system_prompt_hint" = "وقتی این مدل پاسخ تولید می‌کند، به‌صورت خودکار اعمال می‌شود.";

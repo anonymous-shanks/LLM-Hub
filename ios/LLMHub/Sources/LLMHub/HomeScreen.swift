@@ -26,7 +26,7 @@ struct HomeScreen: View {
             FeatureCard(titleKey: "feature_scam_detector", descriptionKey: "feature_scam_detector_desc", iconSystemName: "shield.fill", gradient: [Color(hex: "ffb08a"), Color(hex: "d77c59")], route: "scam_detector"),
             FeatureCard(titleKey: "feature_image_generator", descriptionKey: "feature_image_generator_desc", iconSystemName: "paintpalette.fill", gradient: [Color(hex: "9cc3ff"), Color(hex: "5b86d2")], route: "image_generator"),
             FeatureCard(titleKey: "feature_vibe_coder", descriptionKey: "feature_vibe_coder_desc", iconSystemName: "chevron.left.slash.chevron.right", gradient: [Color(hex: "a8bcff"), Color(hex: "5f76be")], route: "vibe_coder"),
-            FeatureCard(titleKey: "feature_creator_generation", descriptionKey: "feature_creator_generation_desc", iconSystemName: "sparkles", gradient: [Color(hex: "9dc5e6"), Color(hex: "6586ae")], route: "creator_generation")
+            FeatureCard(titleKey: "feature_vibevoice", descriptionKey: "feature_vibevoice_desc", iconSystemName: "waveform.circle.fill", gradient: [Color(hex: "89d3f7"), Color(hex: "3a68cc")], route: "vibe_voice")
         ]
     }
 
@@ -134,7 +134,7 @@ struct HomeScreen: View {
                                 switch feature.route {
                                 case "chat":
                                     onNavigateToChat()
-                                case "writing_aid", "translator", "transcriber", "scam_detector", "vibe_coder", "image_generator":
+                                case "writing_aid", "translator", "transcriber", "scam_detector", "vibe_coder", "image_generator", "vibe_voice":
                                     onNavigateToRoute(feature.route)
                                 default:
                                     break

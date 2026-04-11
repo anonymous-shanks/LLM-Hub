@@ -730,6 +730,11 @@
 "home_section_utilities" = "Утиліти";
 "feature_vibevoice" = "Голосовий чат";
 "feature_vibevoice_desc" = "Локальний голосовий чат з ШІ";
+"vibevoice_listening" = "Listening...";
+"vibevoice_responding" = "Thinking...";
+"vibevoice_speaking" = "Speaking...";
+"vibevoice_tap_to_start" = "Tap to start voice chat";
+"vibevoice_tap_to_stop" = "Tap to stop";
 "chat_now" = "Почати чат";
 "model_system_prompt_label" = "Системний промпт (для моделі)";
 "model_system_prompt_hint" = "Застосовується автоматично, коли ця модель генерує відповідь.";

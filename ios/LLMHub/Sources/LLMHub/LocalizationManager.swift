@@ -183,14 +183,24 @@ final class OnDeviceTtsManager: NSObject, ObservableObject, AVSpeechSynthesizerD
 
         stop()
 
-        let utterance = AVSpeechUtterance(string: cleaned)
-        utterance.voice = bestVoice(for: cleaned, fallbackLanguage: fallbackLanguage)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        utterance.prefersAssistiveTechnologySettings = true
-
         currentKey = key
         isSpeaking = true
-        synthesizer.speak(utterance)
+
+        // Switch audio session to playback off the main thread, then create
+        // and speak the utterance on MainActor (AVSpeechUtterance is not Sendable).
+        let fallback = fallbackLanguage
+        Task.detached(priority: .userInitiated) { [weak self, cleaned, fallback] in
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: .duckOthers)
+            try? AVAudioSession.sharedInstance().setActive(true)
+            await MainActor.run { [weak self] in
+                guard let self = self else { return }
+                let utterance = AVSpeechUtterance(string: cleaned)
+                utterance.voice = self.bestVoice(for: cleaned, fallbackLanguage: fallback)
+                utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+                utterance.prefersAssistiveTechnologySettings = true
+                self.synthesizer.speak(utterance)
+            }
+        }
     }
 
     func toggleSpeaking(_ text: String, fallbackLanguage: AppLanguage, key: String) {
@@ -219,6 +229,9 @@ final class OnDeviceTtsManager: NSObject, ObservableObject, AVSpeechSynthesizerD
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        // Do NOT call setActive(false) here — calling it tears down the audio server
+        // connection (IPCAUClient: can't connect to server). SpeechEngine.start() will
+        // switch the category and call setActive(true) itself when the mic restarts.
         Task { @MainActor in
             self.isSpeaking = false
             self.currentKey = nil

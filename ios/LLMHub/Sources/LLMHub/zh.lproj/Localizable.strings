@@ -746,3 +746,7 @@
 "dialog_delete_chat_message" = "确定要删除对话 \"%1$@\" 吗？";
 "dialog_delete_creator_message" = "确定要删除你的自定义 AI \"%1$@\" 吗？";
 "model_name_already_exists" = "名为 \"%1$@\" 的模型已存在。请使用其他名称或先删除现有模型。";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";

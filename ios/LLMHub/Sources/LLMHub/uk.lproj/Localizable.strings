@@ -738,3 +738,7 @@
 "chat_now" = "Почати чат";
 "model_system_prompt_label" = "Системний промпт (для моделі)";
 "model_system_prompt_hint" = "Застосовується автоматично, коли ця модель генерує відповідь.";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";

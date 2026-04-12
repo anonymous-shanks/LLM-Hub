@@ -291,6 +291,8 @@ struct MemoryManagerSheet: View {
     @State private var statusMessage: String? = nil
     @State private var showClearConfirm = false
     @State private var isSaving = false
+    @State private var showChatImport = false
+    @State private var editingDocument: MemoryDocument? = nil
     @StateObject private var memoryStore = MemoryStore.shared
     @StateObject private var ragManager = RagServiceManager.shared
 
@@ -304,13 +306,21 @@ struct MemoryManagerSheet: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(settings.localized("paste_or_upload_to_memory"))
                                 .font(.subheadline).foregroundColor(.white.opacity(0.8))
-                            TextEditor(text: $pasteText)
-                                .frame(minHeight: 120)
-                                .padding(8)
-                                .background(.ultraThinMaterial)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.16), lineWidth: 1))
-                                .foregroundColor(.white)
+                            ZStack(alignment: .topLeading) {
+                                TextEditor(text: $pasteText)
+                                    .frame(minHeight: 120)
+                                    .padding(8)
+                                    .background(.ultraThinMaterial)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                                    .foregroundColor(.white)
+                                if pasteText.isEmpty {
+                                    Text(settings.localized("paste_memory_placeholder"))
+                                        .foregroundColor(.white.opacity(0.35))
+                                        .padding(.horizontal, 12).padding(.top, 16)
+                                        .allowsHitTesting(false)
+                                }
+                            }
                         }
                         .padding(.horizontal)
 
@@ -333,9 +343,11 @@ struct MemoryManagerSheet: View {
                                 guard !trimmed.isEmpty else { return }
                                 isSaving = true
                                 Task {
+                                    let ts = Int(Date().timeIntervalSince1970)
                                     let ok = await RagServiceManager.shared.addGlobalMemory(
                                         text: trimmed,
-                                        fileName: settings.localized("paste_memory_placeholder")
+                                        fileName: "pasted_memory_\(ts).txt",
+                                        metadata: "pasted"
                                     )
                                     await MainActor.run {
                                         isSaving = false
@@ -360,6 +372,20 @@ struct MemoryManagerSheet: View {
                         }
                         .padding(.horizontal)
 
+                        // Import Chat History button
+                        Button {
+                            showChatImport = true
+                        } label: {
+                            Label(settings.localized("import_chat_history"), systemImage: "bubble.left.and.bubble.right")
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(.ultraThinMaterial)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                        }
+                        .padding(.horizontal)
+
                         // Status
                         if let msg = statusMessage {
                             Text(msg)
@@ -375,38 +401,31 @@ struct MemoryManagerSheet: View {
                                 Text(settings.localized("saved_memories"))
                                     .font(.headline).foregroundColor(.white)
                                 Spacer()
-                                if !memoryStore.chunks.isEmpty {
+                                if !memoryStore.documents.isEmpty {
                                     Button {
                                         showClearConfirm = true
                                     } label: {
-                                        Image(systemName: "trash")
+                                        Text(settings.localized("clear_all"))
+                                            .font(.caption)
                                             .foregroundColor(.red.opacity(0.8))
                                     }
                                 }
                             }
                             .padding(.horizontal)
 
-                            if memoryStore.chunks.isEmpty {
+                            if memoryStore.documents.isEmpty {
                                 Text(settings.localized("no_memories"))
                                     .font(.caption).foregroundColor(.white.opacity(0.55))
                                     .padding(.horizontal)
                             } else {
-                                let fileGroups = Dictionary(grouping: memoryStore.chunks, by: { $0.fileName })
-                                ForEach(fileGroups.keys.sorted(), id: \.self) { fileName in
-                                    let count = fileGroups[fileName]?.count ?? 0
-                                    HStack {
-                                        Image(systemName: "doc.text")
-                                            .foregroundColor(ApolloPalette.accentStrong)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(fileName).font(.subheadline).foregroundColor(.white).lineLimit(1)
-                                            Text(String(format: settings.localized("documents_available_format"), count))
-                                                .font(.caption).foregroundColor(.white.opacity(0.6))
+                                ForEach(memoryStore.documents) { doc in
+                                    MemoryDocumentRow(
+                                        doc: doc,
+                                        onEdit: { editingDocument = doc },
+                                        onDelete: {
+                                            Task { await RagServiceManager.shared.removeGlobalDocument(docId: doc.id) }
                                         }
-                                        Spacer()
-                                    }
-                                    .padding(.horizontal).padding(.vertical, 6)
-                                    .background(.ultraThinMaterial)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    )
                                     .padding(.horizontal)
                                 }
                             }
@@ -424,12 +443,13 @@ struct MemoryManagerSheet: View {
                         .foregroundColor(.white)
                 }
             }
-            .confirmationDialog(settings.localized("memory_cleared"), isPresented: $showClearConfirm, titleVisibility: .visible) {
-                Button(settings.localized("memory_cleared"), role: .destructive) {
+            .confirmationDialog(settings.localized("confirm_replace_memory_title"), isPresented: $showClearConfirm, titleVisibility: .visible) {
+                Button(settings.localized("clear_all"), role: .destructive) {
                     Task { await RagServiceManager.shared.clearGlobalMemory() }
-                    statusMessage = settings.localized("memory_cleared")
                 }
                 Button(settings.localized("cancel"), role: .cancel) {}
+            } message: {
+                Text(settings.localized("confirm_replace_memory_message"))
             }
             .fileImporter(
                 isPresented: $showDocPicker,
@@ -450,12 +470,236 @@ struct MemoryManagerSheet: View {
                         }
                         return
                     }
-                    let ok = await RagServiceManager.shared.addGlobalMemory(text: text, fileName: fileName)
+                    let ok = await RagServiceManager.shared.addGlobalMemory(text: text, fileName: fileName, metadata: "uploaded")
                     await MainActor.run {
                         isSaving = false
                         statusMessage = ok
                             ? settings.localized("memory_upload_success")
                             : settings.localized("memory_upload_failed")
+                    }
+                }
+            }
+            .sheet(isPresented: $showChatImport) {
+                ChatImportSheet(
+                    onDismiss: { showChatImport = false },
+                    onImport: { imported in
+                        statusMessage = settings.localized("chat_imported_to_memory")
+                    }
+                )
+                .environmentObject(settings)
+            }
+            .sheet(item: $editingDocument) { doc in
+                EditMemorySheet(document: doc, onDismiss: { editingDocument = nil })
+                    .environmentObject(settings)
+            }
+        }
+    }
+}
+
+// MARK: - MemoryDocumentRow
+
+private struct MemoryDocumentRow: View {
+    @EnvironmentObject var settings: AppSettings
+    let doc: MemoryDocument
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(displayTitle)
+                    .font(.subheadline).foregroundColor(.white).lineLimit(2)
+                Text(metaLabel + " • " + doc.createdAt.formatted(.dateTime.month().day().year()))
+                    .font(.caption).foregroundColor(.white.opacity(0.55))
+            }
+            Spacer(minLength: 4)
+            if doc.metadata == "pasted" {
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                        .foregroundColor(.white.opacity(0.7))
+                        .frame(width: 32, height: 32)
+                }
+            }
+            Button(action: onDelete) {
+                Image(systemName: "trash")
+                    .foregroundColor(.red.opacity(0.7))
+                    .frame(width: 32, height: 32)
+            }
+        }
+        .padding(10)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var displayTitle: String {
+        if doc.metadata == "pasted" {
+            return doc.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "\n", with: " ")
+                .prefix(120).description
+        }
+        return doc.fileName
+    }
+
+    private var metaLabel: String {
+        switch doc.metadata {
+        case "uploaded":    return settings.localized("global_memory_uploaded_by")
+        case "pasted":      return settings.localized("global_memory_pasted_by")
+        case "chat_import": return settings.localized("chat_imported_to_memory")
+        default:            return doc.metadata
+        }
+    }
+}
+
+// MARK: - EditMemorySheet
+
+private struct EditMemorySheet: View {
+    @EnvironmentObject var settings: AppSettings
+    let document: MemoryDocument
+    let onDismiss: () -> Void
+
+    @State private var editedContent: String
+    @State private var isSaving = false
+
+    init(document: MemoryDocument, onDismiss: @escaping () -> Void) {
+        self.document = document
+        self.onDismiss = onDismiss
+        self._editedContent = State(initialValue: document.content)
+    }
+
+    var body: some View {
+        NavigationView {
+            ZStack {
+                ApolloLiquidBackground()
+                VStack(spacing: 16) {
+                    TextEditor(text: $editedContent)
+                        .frame(maxWidth: .infinity, minHeight: 200)
+                        .padding(8)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                        .foregroundColor(.white)
+                        .padding(.horizontal)
+                    Spacer()
+                }
+                .padding(.top, 16)
+            }
+            .navigationTitle(settings.localized("edit_memory"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(settings.localized("cancel")) { onDismiss() }
+                        .foregroundColor(.white)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSaving {
+                        ProgressView().tint(.white)
+                    } else {
+                        Button(settings.localized("save_changes")) {
+                            let trimmed = editedContent.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !trimmed.isEmpty else { return }
+                            isSaving = true
+                            Task {
+                                await RagServiceManager.shared.updateGlobalMemoryDocument(docId: document.id, newContent: trimmed)
+                                await MainActor.run {
+                                    isSaving = false
+                                    onDismiss()
+                                }
+                            }
+                        }
+                        .foregroundColor(.white)
+                        .disabled(editedContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - ChatImportSheet
+
+private struct ChatImportSheet: View {
+    @EnvironmentObject var settings: AppSettings
+    let onDismiss: () -> Void
+    let onImport: ([ChatSession]) -> Void
+
+    @StateObject private var chatStore = ChatStore.shared
+    @State private var selectedIds: Set<UUID> = []
+    @State private var isImporting = false
+
+    var body: some View {
+        NavigationView {
+            ZStack {
+                ApolloLiquidBackground()
+                if chatStore.chatSessions.isEmpty {
+                    Text(settings.localized("no_memories"))
+                        .foregroundColor(.white.opacity(0.55))
+                } else {
+                    List(chatStore.chatSessions) { session in
+                        Button {
+                            if selectedIds.contains(session.id) {
+                                selectedIds.remove(session.id)
+                            } else {
+                                selectedIds.insert(session.id)
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: selectedIds.contains(session.id) ? "checkmark.circle.fill" : "circle")
+                                    .foregroundColor(selectedIds.contains(session.id) ? ApolloPalette.accentStrong : .white.opacity(0.4))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(session.title.isEmpty ? settings.localized("drawer_new_chat") : session.title)
+                                        .foregroundColor(.white).font(.subheadline)
+                                    Text("\(session.messages.count) messages")
+                                        .foregroundColor(.white.opacity(0.5)).font(.caption)
+                                }
+                            }
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 14, bottom: 6, trailing: 14))
+                    }
+                    .listStyle(.insetGrouped)
+                    .scrollContentBackground(.hidden)
+                }
+            }
+            .navigationTitle(settings.localized("select_chats_to_import"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(settings.localized("cancel")) { onDismiss() }
+                        .foregroundColor(.white)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isImporting {
+                        ProgressView().tint(.white)
+                    } else {
+                        Button(settings.localized("import_chat_history")) {
+                            let toImport = chatStore.chatSessions.filter { selectedIds.contains($0.id) }
+                            guard !toImport.isEmpty else { return }
+                            isImporting = true
+                            Task {
+                                for session in toImport {
+                                    let chatText = session.messages.map { msg in
+                                        let role = msg.isFromUser ? "User" : "Assistant"
+                                        return "\(role): \(msg.content)"
+                                    }.joined(separator: "\n\n")
+                                    guard !chatText.isEmpty else { continue }
+                                    let title = session.title.isEmpty ? settings.localized("drawer_new_chat") : session.title
+                                    await RagServiceManager.shared.addGlobalMemory(
+                                        text: chatText,
+                                        fileName: "Chat: \(title)",
+                                        metadata: "chat_import"
+                                    )
+                                }
+                                await MainActor.run {
+                                    isImporting = false
+                                    onImport(toImport)
+                                    onDismiss()
+                                }
+                            }
+                        }
+                        .foregroundColor(selectedIds.isEmpty ? .white.opacity(0.4) : .white)
+                        .disabled(selectedIds.isEmpty)
                     }
                 }
             }

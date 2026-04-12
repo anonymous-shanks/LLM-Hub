@@ -1,7 +1,25 @@
 import Foundation
 
-// MARK: - MemoryChunk
-// A single persisted chunk of global memory (mirrors Android's MemoryChunkEmbedding).
+// MARK: - MemoryDocument
+// A single persisted global-memory entry (mirrors Android's MemoryDocument).
+
+struct MemoryDocument: Codable, Identifiable, Sendable {
+    let id: String
+    var fileName: String
+    var content: String
+    var metadata: String   // "pasted" | "uploaded" | "chat_import"
+    let createdAt: Date
+
+    init(id: String = "mem_\(UUID().uuidString)", fileName: String, content: String, metadata: String, createdAt: Date = Date()) {
+        self.id = id
+        self.fileName = fileName
+        self.content = content
+        self.metadata = metadata
+        self.createdAt = createdAt
+    }
+}
+
+// MARK: - MemoryChunk (legacy struct — kept for migration only)
 
 struct MemoryChunk: Codable, Identifiable, Sendable {
     let id: UUID
@@ -22,14 +40,18 @@ struct MemoryChunk: Codable, Identifiable, Sendable {
 }
 
 // MARK: - MemoryStore
-// Persists global memory chunks to Documents/llmhub_memory.json.
+// Persists global memory documents to Documents/llmhub_memory.json.
 
 @MainActor
 final class MemoryStore: ObservableObject {
 
     static let shared = MemoryStore()
 
-    @Published private(set) var chunks: [MemoryChunk] = []
+    @Published private(set) var documents: [MemoryDocument] = []
+
+    private struct Store: Codable {
+        var documents: [MemoryDocument]
+    }
 
     private var fileURL: URL {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -40,20 +62,27 @@ final class MemoryStore: ObservableObject {
         load()
     }
 
-    // MARK: - Mutations
+    // MARK: - Document Mutations
 
-    func append(_ chunk: MemoryChunk) {
-        chunks.append(chunk)
+    func appendDocument(_ doc: MemoryDocument) {
+        documents.append(doc)
         save()
     }
 
-    func appendAll(_ newChunks: [MemoryChunk]) {
-        chunks.append(contentsOf: newChunks)
+    func removeDocument(id: String) {
+        documents.removeAll { $0.id == id }
         save()
     }
 
-    func clearAll() {
-        chunks.removeAll()
+    func updateDocument(_ doc: MemoryDocument) {
+        if let idx = documents.firstIndex(where: { $0.id == doc.id }) {
+            documents[idx] = doc
+            save()
+        }
+    }
+
+    func clearAllDocuments() {
+        documents.removeAll()
         save()
     }
 
@@ -61,14 +90,30 @@ final class MemoryStore: ObservableObject {
 
     private func load() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
-        guard let data = try? Data(contentsOf: fileURL) else { return }
-        if let decoded = try? JSONDecoder().decode([MemoryChunk].self, from: data) {
-            chunks = decoded
+        guard let rawData = try? Data(contentsOf: fileURL) else { return }
+
+        // Try new Store format first.
+        if let decoded = try? JSONDecoder().decode(Store.self, from: rawData) {
+            documents = decoded.documents
+            return
+        }
+
+        // Migrate from legacy [MemoryChunk] format.
+        if let oldChunks = try? JSONDecoder().decode([MemoryChunk].self, from: rawData) {
+            let fileGroups = Dictionary(grouping: oldChunks, by: { $0.fileName })
+            documents = fileGroups.map { fileName, chunks in
+                let body = chunks.sorted { $0.chunkIndex < $1.chunkIndex }
+                    .map { $0.content }.joined(separator: "\n\n")
+                return MemoryDocument(fileName: fileName, content: body, metadata: "uploaded")
+            }.sorted { $0.createdAt < $1.createdAt }
+            save()
         }
     }
 
     func save() {
-        guard let data = try? JSONEncoder().encode(chunks) else { return }
+        let store = Store(documents: documents)
+        guard let data = try? JSONEncoder().encode(store) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
 }
+

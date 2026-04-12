@@ -738,3 +738,7 @@
 "chat_now" = "今すぐチャット";
 "model_system_prompt_label" = "システムプロンプト（モデルごと）";
 "model_system_prompt_hint" = "このモデルが応答を生成する際に自動で適用されます。";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";

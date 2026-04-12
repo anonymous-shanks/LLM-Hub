@@ -738,3 +738,7 @@
 "chat_now" = "Şimdi sohbet et";
 "model_system_prompt_label" = "Sistem istemi (model başına)";
 "model_system_prompt_hint" = "Bu model yanıt oluşturduğunda otomatik olarak uygulanır.";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";

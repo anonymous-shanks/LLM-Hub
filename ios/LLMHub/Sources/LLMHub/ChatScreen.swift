@@ -1,6 +1,8 @@
+import AVFoundation
 import Foundation
 import PhotosUI
 import RunAnywhere
+import Speech
 import SwiftUI
 import UniformTypeIdentifiers
 #if canImport(FoundationModels)
@@ -103,6 +105,97 @@ private func chatModel(named modelName: String) -> AIModel? {
     return nil
 }
 
+// MARK: - Chat Mic Transcriber
+// Lightweight transcriber for injecting speech into the input field.
+@available(iOS 17.0, *)
+@MainActor
+final class ChatMicTranscriber: NSObject, ObservableObject {
+    @Published var liveText: String = ""
+    @Published var isRecording: Bool = false
+    @Published var isPreparing: Bool = false
+    @Published var isTranscribing: Bool = false
+
+    private var baseText: String = ""
+    private let engine = SpeechEngine()
+    private let speechRecognizer = SFSpeechRecognizer()
+
+    func startLive() async {
+        guard !isRecording, !isPreparing else { return }
+        isPreparing = true
+        liveText = ""
+        baseText = ""
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
+            let authStatus = await withCheckedContinuation { c in
+                SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0) }
+            }
+            let micOK = await AVAudioApplication.requestRecordPermission()
+            guard authStatus == .authorized && micOK else {
+                await MainActor.run { self.isPreparing = false }
+                return
+            }
+            do {
+                try await self.engine.start(onResult: { result in
+                    let text = result.bestTranscription.formattedString
+                    Task { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        self.liveText = self.baseText + (self.baseText.isEmpty ? "" : " ") + text
+                    }
+                }, onError: { _ in })
+                await MainActor.run {
+                    self.isRecording = true
+                    self.isPreparing = false
+                }
+            } catch {
+                await MainActor.run { self.isPreparing = false }
+            }
+        }
+    }
+
+    /// Stop live recording and return the final transcript.
+    func stopLive() async -> String {
+        await engine.stop()
+        let result = liveText
+        await MainActor.run {
+            self.isRecording = false
+            self.isPreparing = false
+            self.liveText = ""
+            self.baseText = ""
+        }
+        return result
+    }
+
+    /// Transcribe an audio file URL and return the resulting text.
+    func transcribeFile(_ url: URL) async -> String {
+        await MainActor.run { self.isTranscribing = true }
+        defer { Task { @MainActor in self.isTranscribing = false } }
+
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mic_transcribe_\(UUID().uuidString).\(url.pathExtension.isEmpty ? "m4a" : url.pathExtension)")
+        try? FileManager.default.copyItem(at: url, to: tempURL)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        return await withCheckedContinuation { continuation in
+            let request = SFSpeechURLRecognitionRequest(url: tempURL)
+            request.shouldReportPartialResults = false
+            if speechRecognizer?.supportsOnDeviceRecognition == true {
+                request.requiresOnDeviceRecognition = true
+            }
+            speechRecognizer?.recognitionTask(with: request) { result, error in
+                if let result, result.isFinal {
+                    continuation.resume(returning: result.bestTranscription.formattedString)
+                } else if error != nil {
+                    continuation.resume(returning: "")
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Chat ViewModel
 @MainActor
 class ChatViewModel: ObservableObject {
@@ -137,6 +230,8 @@ class ChatViewModel: ObservableObject {
     // MARK: - RAG/Memory
     @Published var isIndexingDocument: Bool = false
     @Published var ragDocumentCount: Int = 0
+    /// Char count of pending attached document (used for context ring when RAG is off).
+    @Published var pendingAttachedDocumentChars: Int = 0
 
     var isRagEnabled: Bool {
         AppSettings.shared.ragEnabled && AppSettings.shared.selectedEmbeddingModelId != nil
@@ -248,7 +343,9 @@ class ChatViewModel: ObservableObject {
         let visibleMessages = Array(messages.dropFirst(startIndex))
         let messageChars = visibleMessages.reduce(0) { $0 + $1.content.count }
         let composerChars = inputText.count
-        let totalChars = messageChars + composerChars
+        // When RAG is disabled the attached doc is stuffed into system prompt — count it.
+        let docChars = isRagEnabled ? 0 : pendingAttachedDocumentChars
+        let totalChars = messageChars + composerChars + docChars
         return max(0, Double(totalChars) / 4.0)
     }
 
@@ -532,6 +629,7 @@ class ChatViewModel: ObservableObject {
         )
         messages.append(userMsg)
         inputText = ""
+        pendingAttachedDocumentChars = 0
 
         // Auto-update title
         if currentTitle == AppSettings.shared.localized("drawer_new_chat") {
@@ -552,10 +650,16 @@ class ChatViewModel: ObservableObject {
         let capturedPrompt = generationPrompt
 
         streamingTask = Task {
-            // 1. Index document into RAG if provided and RAG is enabled.
+            // 1. Extract document text (always, when a document is attached).
+            var inlineDocumentText: String? = nil
+            if let docURL = capturedDocURL {
+                inlineDocumentText = try? DocumentTextExtractor.extract(from: docURL)
+            }
+
+            // 1b. Index document into RAG if RAG is enabled.
             if let docURL = capturedDocURL, ragEnabled {
                 await MainActor.run { self.isIndexingDocument = true }
-                if let text = try? DocumentTextExtractor.extract(from: docURL) {
+                if let text = inlineDocumentText {
                     _ = await RagServiceManager.shared.addDocument(chatId: chatId, text: text, fileName: capturedDocName)
                     await MainActor.run {
                         Task { self.ragDocumentCount = await RagServiceManager.shared.documentCount(chatId: chatId) }
@@ -564,9 +668,10 @@ class ChatViewModel: ObservableObject {
                 await MainActor.run { self.isIndexingDocument = false }
             }
 
-            // 2. Build RAG context prefix.
+            // 2. Build context prefix: RAG chunks + fallback full document text when RAG disabled.
             var ragContextPrefix = ""
-            if ragEnabled && !capturedPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if !capturedPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if ragEnabled {
                 var contextParts: [String] = []
 
                 // 2a. Global memory search.
@@ -594,9 +699,12 @@ class ChatViewModel: ObservableObject {
                         + contextParts.joined(separator: "\n\n")
                         + "\n\n---\n\n"
                 }
+            } else if let docText = inlineDocumentText, !docText.isEmpty {
+                // RAG disabled but document attached: stuff full text directly into context.
+                let truncated = String(docText.prefix(8000))
+                ragContextPrefix = "The user has attached the following document (\(capturedDocName)):\n\n\(truncated)\n\n---\n\n"
             }
-
-            // 3. Load model and generate.
+            } // end: if !capturedPrompt.isEmpty
             await loadModelIfNecessary(force: shouldResetInferenceContext)
 
             do {
@@ -1447,6 +1555,7 @@ struct ChatScreen: View {
     @State private var showSettings = false
     @State private var copiedMessageId: UUID? = nil
     @State private var selectedImageItem: PhotosPickerItem?
+    @State private var showPhotosPicker = false
     @State private var attachedImageURL: URL?
     @State private var attachedAudioURL: URL?
     @State private var attachedDocumentURL: URL?
@@ -1454,7 +1563,10 @@ struct ChatScreen: View {
     @State private var previewImagePath: String?
     @State private var showAudioImporter = false
     @State private var showDocumentImporter = false
+    @State private var showAudioTranscribeImporter = false
+    @State private var showAttachMenu = false
     @State private var hasInitializedChatSession = false
+    @StateObject private var micTranscriber = ChatMicTranscriber()
     @FocusState private var isComposerFocused: Bool
 
     var body: some View {
@@ -1640,75 +1752,91 @@ struct ChatScreen: View {
                 let selectedModel = ModelData.models.first(where: { $0.name == vm.selectedModelName })
                 let canAttachVision = (selectedModel?.supportsVision == true) && vm.enableVision
                     && (selectedModel.map { LLMBackend.shared.isVisionProjectorAvailable(for: $0) } ?? false)
-                let canAttachAudio = (selectedModel?.supportsAudio == true) && vm.enableAudio
 
-                if canAttachVision {
-                    PhotosPicker(selection: $selectedImageItem, matching: .images) {
-                        Image(systemName: "photo")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.8))
-                            .padding(8)
-                            .background(Color.white.opacity(0.1))
-                            .clipShape(Circle())
-                    }
-                    .disabled(vm.isGenerating)
-                }
-
-                if canAttachAudio {
-                    Button {
-                        showAudioImporter = true
-                    } label: {
-                        Image(systemName: "waveform")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.8))
-                            .padding(8)
-                            .background(Color.white.opacity(0.1))
-                            .clipShape(Circle())
-                    }
-                    .disabled(vm.isGenerating)
-                }
-
-                // Document attachment button (always shown)
+                // ─── + attach menu ───────────────────────────────────────────
                 Button {
-                    showDocumentImporter = true
+                    showAttachMenu = true
                 } label: {
-                    Image(systemName: "doc.badge.plus")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(attachedDocumentURL != nil ? ApolloPalette.accentStrong : .white.opacity(0.8))
+                    Image(systemName: "plus")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(
+                            (attachedImageURL != nil || attachedDocumentURL != nil)
+                                ? ApolloPalette.accentStrong : .white.opacity(0.8)
+                        )
                         .padding(8)
                         .background(Color.white.opacity(0.1))
                         .clipShape(Circle())
                 }
                 .disabled(vm.isGenerating)
+                .confirmationDialog("", isPresented: $showAttachMenu) {
+                    Button(settings.localized("images")) {
+                        showPhotosPicker = true
+                    }
+                    Button(settings.localized("documents")) {
+                        showDocumentImporter = true
+                    }
+                    Button(settings.localized("audio_file")) {
+                        showAudioTranscribeImporter = true
+                    }
+                    Button(settings.localized("cancel"), role: .cancel) {}
+                }
 
+                // ─── text field ──────────────────────────────────────────────
                 HStack(spacing: 8) {
-                    TextField(settings.localized("type_a_message"), text: $vm.inputText, axis: .vertical)
-                        .lineLimit(1...5)
-                        .padding(.leading, 18)
-                        .padding(.vertical, 14)
-                        .focused($isComposerFocused)
-                        .foregroundColor(.white)
-                        .onSubmit {
-                            if vm.sendMessage(imageURL: attachedImageURL, audioURL: attachedAudioURL, documentURL: attachedDocumentURL, documentName: attachedDocumentName) {
-                                attachedImageURL = nil
-                                attachedAudioURL = nil
-                                attachedDocumentURL = nil
-                                attachedDocumentName = nil
-                                selectedImageItem = nil
-                            }
+                    ZStack(alignment: .leading) {
+                        if micTranscriber.isPreparing {
+                            Text(settings.localized("preparing_mic"))
+                                .foregroundColor(.white.opacity(0.5))
+                                .font(.body)
+                                .padding(.leading, 18)
                         }
+                        TextField(settings.localized("type_a_message"), text: $vm.inputText, axis: .vertical)
+                            .lineLimit(1...5)
+                            .padding(.leading, 18)
+                            .padding(.vertical, 14)
+                            .focused($isComposerFocused)
+                            .foregroundColor(.white)
+                            .onSubmit {
+                                if vm.sendMessage(imageURL: attachedImageURL, audioURL: attachedAudioURL, documentURL: attachedDocumentURL, documentName: attachedDocumentName) {
+                                    clearAttachments()
+                                }
+                            }
+                    }
 
+                    // ─── mic button (live speech → input) ───────────────────
+                    Button {
+                        if micTranscriber.isRecording {
+                            Task {
+                                let text = await micTranscriber.stopLive()
+                                if !text.isEmpty {
+                                    vm.inputText += (vm.inputText.isEmpty ? "" : " ") + text
+                                }
+                            }
+                        } else {
+                            Task { await micTranscriber.startLive() }
+                        }
+                    } label: {
+                        ZStack {
+                            if micTranscriber.isRecording {
+                                Circle()
+                                    .fill(Color.red.opacity(0.2))
+                                    .frame(width: 36, height: 36)
+                            }
+                            Image(systemName: micTranscriber.isPreparing ? "ellipsis" : (micTranscriber.isRecording ? "stop.fill" : "mic.fill"))
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(micTranscriber.isRecording ? .red : .white.opacity(0.8))
+                        }
+                    }
+                    .disabled(vm.isGenerating)
+
+                    // ─── send / stop button ──────────────────────────────────
                     Button {
                         isComposerFocused = false
                         if vm.isGenerating {
                             vm.stopGeneration()
                         } else {
                             if vm.sendMessage(imageURL: attachedImageURL, audioURL: attachedAudioURL, documentURL: attachedDocumentURL, documentName: attachedDocumentName) {
-                                attachedImageURL = nil
-                                attachedAudioURL = nil
-                                attachedDocumentURL = nil
-                                attachedDocumentName = nil
-                                selectedImageItem = nil
+                                clearAttachments()
                             }
                         }
                     } label: {
@@ -1795,7 +1923,27 @@ struct ChatScreen: View {
             guard case .success(let urls) = result, let sourceURL = urls.first else { return }
             attachedDocumentURL = sourceURL
             attachedDocumentName = sourceURL.lastPathComponent
+            // Eagerly estimate doc size for context ring (when RAG is off)
+            Task {
+                if let text = try? DocumentTextExtractor.extract(from: sourceURL) {
+                    await MainActor.run { vm.pendingAttachedDocumentChars = min(text.count, 8000) }
+                }
+            }
         }
+        .fileImporter(
+            isPresented: $showAudioTranscribeImporter,
+            allowedContentTypes: [.audio, .mpeg4Audio, .mp3],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result, let sourceURL = urls.first else { return }
+            Task {
+                let transcript = await micTranscriber.transcribeFile(sourceURL)
+                if !transcript.isEmpty {
+                    vm.inputText += (vm.inputText.isEmpty ? "" : " ") + transcript
+                }
+            }
+        }
+        .photosPicker(isPresented: $showPhotosPicker, selection: $selectedImageItem, matching: .images)
         .onChange(of: selectedImageItem) { _, item in
             guard let item else {
                 attachedImageURL = nil
@@ -1846,6 +1994,11 @@ struct ChatScreen: View {
                 attachedAudioURL = nil
             }
         }
+        .onChange(of: micTranscriber.liveText) { _, newText in
+            // Mirror live transcript into the input field in real time.
+            guard !newText.isEmpty else { return }
+            vm.inputText = newText
+        }
         .onAppear {
             guard !hasInitializedChatSession else { return }
             hasInitializedChatSession = true
@@ -1854,6 +2007,15 @@ struct ChatScreen: View {
         .onDisappear {
             vm.unloadModel()
         }
+    }
+
+    private func clearAttachments() {
+        attachedImageURL = nil
+        attachedAudioURL = nil
+        attachedDocumentURL = nil
+        attachedDocumentName = nil
+        selectedImageItem = nil
+        vm.pendingAttachedDocumentChars = 0
     }
 
     private func attachmentPill(label: String, icon: String, onRemove: @escaping () -> Void) -> some View {

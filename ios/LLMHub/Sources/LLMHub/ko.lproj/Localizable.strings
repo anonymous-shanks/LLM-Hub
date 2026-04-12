@@ -738,3 +738,7 @@
 "chat_now" = "지금 채팅";
 "model_system_prompt_label" = "시스템 프롬프트(모델별)";
 "model_system_prompt_hint" = "이 모델이 응답을 생성할 때 자동으로 적용됩니다.";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";

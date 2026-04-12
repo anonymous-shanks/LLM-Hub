@@ -710,3 +710,7 @@
 "chat_now" = "Начать чат";
 "model_system_prompt_label" = "Системный промпт (для модели)";
 "model_system_prompt_hint" = "Применяется автоматически, когда эта модель генерирует ответ.";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";

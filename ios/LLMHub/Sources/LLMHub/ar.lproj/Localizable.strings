@@ -738,3 +738,7 @@
 "chat_now" = "ابدأ الدردشة";
 "model_system_prompt_label" = "تعليمات النظام (لكل نموذج)";
 "model_system_prompt_hint" = "تُطبّق تلقائيًا عند قيام هذا النموذج بإنشاء رد.";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";

@@ -738,3 +738,7 @@
 "chat_now" = "Chat sekarang";
 "model_system_prompt_label" = "Prompt sistem (per model)";
 "model_system_prompt_hint" = "Diterapkan secara otomatis saat model ini menghasilkan respons.";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";

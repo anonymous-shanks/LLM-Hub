@@ -728,3 +728,7 @@
 "chat_now" = "Chatta ora";
 "model_system_prompt_label" = "Prompt di sistema (per modello)";
 "model_system_prompt_hint" = "Applicato automaticamente quando questo modello genera una risposta.";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";

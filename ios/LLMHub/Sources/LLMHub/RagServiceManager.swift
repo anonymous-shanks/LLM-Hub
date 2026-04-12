@@ -16,9 +16,14 @@ final class RagServiceManager: ObservableObject {
 
     // MARK: - Published State
 
-    @Published private(set) var isReady: Bool = false
+    @Published private(set) var isReady: Bool = false         // C embedding API loaded successfully
     @Published private(set) var statusMessage: String = ""
     @Published private(set) var isReembedding: Bool = false
+
+    /// RAG is configured (user enabled it + model selected) — does NOT require C API to be loaded.
+    var isConfigured: Bool {
+        AppSettings.shared.ragEnabled && AppSettings.shared.selectedEmbeddingModelId != nil
+    }
 
     // MARK: - Private
 
@@ -50,7 +55,7 @@ final class RagServiceManager: ObservableObject {
         statusMessage = "Loading embedding model…"
         isReady = false
 
-        // Locate the downloaded GGUF file.
+        // Locate the downloaded ONNX file.
         guard let model = ModelData.models.first(where: { $0.id == modelId }) else {
             statusMessage = "Embedding model not found in catalog."
             return
@@ -61,16 +66,16 @@ final class RagServiceManager: ObservableObject {
             return
         }
 
-        let ggufURL: URL
-        if let found = (try? FileManager.default.contentsOfDirectory(at: modelDir, includingPropertiesForKeys: nil))?.first(where: { $0.pathExtension.lowercased() == "gguf" }) {
-            ggufURL = found
+        let onnxURL: URL
+        if let found = (try? FileManager.default.contentsOfDirectory(at: modelDir, includingPropertiesForKeys: nil))?.first(where: { $0.pathExtension.lowercased() == "onnx" }) {
+            onnxURL = found
         } else {
-            statusMessage = "GGUF file not found for embedding model."
+            statusMessage = "ONNX file not found for embedding model."
             return
         }
 
         do {
-            try await embeddingService.initialize(modelPath: ggufURL.path, modelName: model.name)
+            try await embeddingService.initialize(modelPath: onnxURL.path, modelName: model.name)
             initializedModelName = modelId
             isReady = true
             statusMessage = AppSettings.shared.localized("embedding_enabled")
@@ -87,11 +92,13 @@ final class RagServiceManager: ObservableObject {
 
     /// Add a text document to the per-chat RAG pool, chunk + embed it.
     func addDocument(chatId: UUID, text: String, fileName: String) async -> Bool {
-        guard isReady else { return false }
+        guard isConfigured else { return false }
         let idStr = chatId.uuidString
         await ragService.addRawDocument(chatId: idStr, content: text, fileName: fileName)
-        let embedded = await ragService.embedAllPending(chatId: idStr, service: embeddingService)
-        return embedded > 0
+        if isReady {
+            await ragService.embedAllPending(chatId: idStr, service: embeddingService)
+        }
+        return true
     }
 
     /// Inject any global memory chunks into a specific chat (called on chat load).
@@ -133,20 +140,42 @@ final class RagServiceManager: ObservableObject {
 
     // MARK: - Global Memory
 
-    func addGlobalMemory(text: String, fileName: String) async -> Bool {
-        guard isReady else { return false }
+    func addGlobalMemory(text: String, fileName: String, metadata: String = "pasted") async -> Bool {
+        guard isConfigured else { return false }
         await ragService.addRawDocument(chatId: globalMemoryChatId, content: text, fileName: fileName)
-        await ragService.embedAllPending(chatId: globalMemoryChatId, service: embeddingService)
-
-        // Persist newly embedded chunks.
-        await persistNewGlobalChunks(fileName: fileName)
+        if isReady {
+            await ragService.embedAllPending(chatId: globalMemoryChatId, service: embeddingService)
+        }
+        let doc = MemoryDocument(fileName: fileName, content: text, metadata: metadata)
+        memoryStore.appendDocument(doc)
         return true
     }
 
     func clearGlobalMemory() async {
         await ragService.clear(chatId: globalMemoryChatId)
         populatedChatIds.removeAll()
-        memoryStore.clearAll()
+        memoryStore.clearAllDocuments()
+    }
+
+    func removeGlobalDocument(docId: String) async {
+        memoryStore.removeDocument(id: docId)
+        // Rebuild ragService global memory from remaining documents.
+        await ragService.clear(chatId: globalMemoryChatId)
+        populatedChatIds.removeAll()
+        await restoreGlobalMemory()
+    }
+
+    func updateGlobalMemoryDocument(docId: String, newContent: String) async {
+        guard var doc = memoryStore.documents.first(where: { $0.id == docId }) else { return }
+        doc.content = newContent
+        memoryStore.updateDocument(doc)
+        // Rebuild ragService global memory with updated content.
+        await ragService.clear(chatId: globalMemoryChatId)
+        populatedChatIds.removeAll()
+        await restoreGlobalMemory()
+        if isReady {
+            await ragService.embedAllPending(chatId: globalMemoryChatId, service: embeddingService)
+        }
     }
 
     func globalDocumentCount() async -> Int {
@@ -159,89 +188,27 @@ final class RagServiceManager: ObservableObject {
         isReembedding = true
         defer { isReembedding = false }
 
-        // Reload new model.
         await initialize(modelId: newModelId)
         guard isReady else { return }
 
-        // Get existing chunk text from MemoryStore.
-        let existing = memoryStore.chunks
         await ragService.clear(chatId: globalMemoryChatId)
-
-        for chunk in existing {
-            if let emb = try? await embeddingService.embed(chunk.content) {
-                let newChunk = MemoryChunk(
-                    fileName: chunk.fileName,
-                    content: chunk.content,
-                    chunkIndex: chunk.chunkIndex,
-                    embedding: emb
-                )
-                await ragService.addChunk(
-                    chatId: globalMemoryChatId,
-                    content: newChunk.content,
-                    fileName: newChunk.fileName,
-                    chunkIndex: newChunk.chunkIndex,
-                    embedding: emb
-                )
-            }
-        }
-        await persistAllGlobalChunks()
         populatedChatIds.removeAll()
+
+        for doc in memoryStore.documents {
+            await ragService.addRawDocument(chatId: globalMemoryChatId, content: doc.content, fileName: doc.fileName)
+        }
+        await ragService.embedAllPending(chatId: globalMemoryChatId, service: embeddingService)
     }
 
     // MARK: - Persistence Helpers
 
     private func restoreGlobalMemory() async {
-        let chunks = memoryStore.chunks
-        for chunk in chunks {
-            var emb: [Float] = chunk.embedding ?? []
-            if emb.isEmpty, let freshEmb = try? await embeddingService.embed(chunk.content) {
-                emb = freshEmb
-            }
-            await ragService.addChunk(
-                chatId: globalMemoryChatId,
-                content: chunk.content,
-                fileName: chunk.fileName,
-                chunkIndex: chunk.chunkIndex,
-                embedding: emb
-            )
+        for doc in memoryStore.documents {
+            await ragService.addRawDocument(chatId: globalMemoryChatId, content: doc.content, fileName: doc.fileName)
         }
-    }
-
-    private func persistNewGlobalChunks(fileName: String) async {
-        // Read existing stored count and newly embedded chunks, then diff-persist.
-        // Simple approach: re-save everything (memory typically small).
-        await persistAllGlobalChunks()
-    }
-
-    private func persistAllGlobalChunks() async {
-        // We can't read private ragService internals directly, so we rebuild from
-        // what we already know: the existing MemoryStore + any new search results from
-        // a dummy query. Instead we use the more direct approach of checking documentCount:
-        // Since we can't iterate ragService chunks from outside, we persist via MemoryStore
-        // updates done when addGlobalMemory was called. For now we keep the existing approach
-        // of storing chunks at the point of creation.
-        // This is called after re-embedding, so just flush:
-        memoryStore.save()
-    }
-
-    // Called when a new document is embedded for global memory - updates MemoryStore.
-    private func storeGlobalChunks(text: String, fileName: String) async {
-        // Chunk the text the same way RagService does and store the chunks.
-        // We use the RagService chunks implicitly since they were just added.
-        // For persistence, re-extract the chunk text from the ragService by querying a broad query.
-        let results = await ragService.search(chatId: globalMemoryChatId, query: text.prefix(200).description, queryEmbedding: nil, maxResults: 9999, relaxedLexicalFallback: true)
-        let existingIds = Set(memoryStore.chunks.map { $0.content.prefix(50).description })
-        var newChunks: [MemoryChunk] = []
-        for result in results where result.fileName == fileName {
-            let key = result.content.prefix(50).description
-            guard !existingIds.contains(key) else { continue }
-            newChunks.append(MemoryChunk(
-                fileName: result.fileName,
-                content: result.content,
-                chunkIndex: result.chunkIndex,
-                embedding: nil // embedding stored only in-memory (ragService)
-            ))
+        if isReady {
+            await ragService.embedAllPending(chatId: globalMemoryChatId, service: embeddingService)
         }
-        memoryStore.appendAll(newChunks)
     }
 }
+

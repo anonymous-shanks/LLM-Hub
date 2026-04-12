@@ -709,3 +709,7 @@
 "chat_now" = "Chatear ahora";
 "model_system_prompt_label" = "Prompt del sistema (por modelo)";
 "model_system_prompt_hint" = "Se aplica automáticamente cuando este modelo genera una respuesta.";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";

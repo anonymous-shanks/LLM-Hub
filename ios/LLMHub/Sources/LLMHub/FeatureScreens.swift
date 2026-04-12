@@ -716,7 +716,7 @@ private struct FeatureModelSettingsSheet: View {
 }
 
 @available(iOS 17.0, *)
-private actor SpeechEngine {
+actor SpeechEngine {
     private var audioEngine: AVAudioEngine?
     private let speechRecognizer = SFSpeechRecognizer()
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?

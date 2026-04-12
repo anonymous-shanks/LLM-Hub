@@ -738,3 +738,7 @@
 "chat_now" = "اکنون چت کنید";
 "model_system_prompt_label" = "پرامپت سیستم (برای هر مدل)";
 "model_system_prompt_hint" = "وقتی این مدل پاسخ تولید می‌کند، به‌صورت خودکار اعمال می‌شود.";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";

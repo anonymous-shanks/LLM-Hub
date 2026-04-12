@@ -2155,58 +2155,70 @@ public static let models: [AIModel] = [
         additionalFiles: []
     ),
 
-    // MARK: - EmbeddingGemma 300M GGUF (unsloth) — Embedding Models for RAG
+    // MARK: - EmbeddingGemma 300M ONNX — Embedding Models for RAG
 
     AIModel(
-        id: "embeddinggemma-300m-q4-0",
-        name: "EmbeddingGemma 300M (Q4_0)",
-        description: "Google EmbeddingGemma 300M quantized to Q4_0. Lightweight semantic embedding model for RAG and memory. Use with the RAG feature in AI Chat. (278 MB)",
-        url: "https://huggingface.co/unsloth/embeddinggemma-300m-GGUF/resolve/main/embeddinggemma-300m-Q4_0.gguf?download=true",
+        id: "embeddinggemma-300m-onnx-q4",
+        name: "EmbeddingGemma 300M (Q4)",
+        description: "Google EmbeddingGemma 300M Q4 quantized ONNX. Lightweight semantic embedding model for RAG and memory. (219 MB)",
+        url: "https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/onnx/model_q4.onnx?download=true",
         category: .embedding,
-        sizeBytes: 291669606,
-        source: "Google / Unsloth",
+        sizeBytes: 218725224,
+        source: "Google / ONNX Community",
         supportsVision: false,
         supportsAudio: false,
         supportsThinking: false,
         supportsGpu: true,
         requirements: ModelRequirements(minRamGB: 1, recommendedRamGB: 2),
         contextWindowSize: 512,
-        modelFormat: .gguf,
-        additionalFiles: []
+        modelFormat: .onnx,
+        additionalFiles: [
+            "https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/onnx/model_q4.onnx_data?download=true",
+            "https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/tokenizer.json?download=true",
+            "https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/tokenizer_config.json?download=true"
+        ]
     ),
     AIModel(
-        id: "embeddinggemma-300m-q8-0",
-        name: "EmbeddingGemma 300M (Q8_0)",
-        description: "Google EmbeddingGemma 300M quantized to Q8_0. Higher-quality semantic embeddings for RAG and memory. (329 MB)",
-        url: "https://huggingface.co/unsloth/embeddinggemma-300m-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf?download=true",
+        id: "embeddinggemma-300m-onnx-int8",
+        name: "EmbeddingGemma 300M (INT8)",
+        description: "Google EmbeddingGemma 300M INT8 quantized ONNX. Balanced size and accuracy for RAG and memory. (331 MB)",
+        url: "https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/onnx/model_quantized.onnx?download=true",
         category: .embedding,
-        sizeBytes: 345039502,
-        source: "Google / Unsloth",
+        sizeBytes: 330938640,
+        source: "Google / ONNX Community",
         supportsVision: false,
         supportsAudio: false,
         supportsThinking: false,
         supportsGpu: true,
         requirements: ModelRequirements(minRamGB: 1, recommendedRamGB: 2),
         contextWindowSize: 512,
-        modelFormat: .gguf,
-        additionalFiles: []
+        modelFormat: .onnx,
+        additionalFiles: [
+            "https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/onnx/model_quantized.onnx_data?download=true",
+            "https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/tokenizer.json?download=true",
+            "https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/tokenizer_config.json?download=true"
+        ]
     ),
     AIModel(
-        id: "embeddinggemma-300m-bf16",
-        name: "EmbeddingGemma 300M (BF16)",
-        description: "Google EmbeddingGemma 300M in BF16 precision. Full-precision semantic embeddings for RAG and memory. Best quality. (612 MB)",
-        url: "https://huggingface.co/unsloth/embeddinggemma-300m-GGUF/resolve/main/embeddinggemma-300M-BF16.gguf?download=true",
+        id: "embeddinggemma-300m-onnx-fp16",
+        name: "EmbeddingGemma 300M (FP16)",
+        description: "Google EmbeddingGemma 300M FP16 ONNX. High-quality semantic embeddings for RAG and memory. Best accuracy. (640 MB)",
+        url: "https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/onnx/model_fp16.onnx?download=true",
         category: .embedding,
-        sizeBytes: 641729638,
-        source: "Google / Unsloth",
+        sizeBytes: 639569517,
+        source: "Google / ONNX Community",
         supportsVision: false,
         supportsAudio: false,
         supportsThinking: false,
         supportsGpu: true,
         requirements: ModelRequirements(minRamGB: 2, recommendedRamGB: 3),
         contextWindowSize: 512,
-        modelFormat: .gguf,
-        additionalFiles: []
+        modelFormat: .onnx,
+        additionalFiles: [
+            "https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/onnx/model_fp16.onnx_data?download=true",
+            "https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/tokenizer.json?download=true",
+            "https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/tokenizer_config.json?download=true"
+        ]
     ),
 ]
 }

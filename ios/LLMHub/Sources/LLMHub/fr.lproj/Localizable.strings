@@ -725,3 +725,7 @@
 "chat_now" = "Discuter maintenant";
 "model_system_prompt_label" = "Invite système (par modèle)";
 "model_system_prompt_hint" = "S’applique automatiquement lorsque ce modèle génère une réponse.";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";
+"audio_file_transcribe" = "Audio File (Transcribe)";
+"preparing_mic" = "Preparing…";

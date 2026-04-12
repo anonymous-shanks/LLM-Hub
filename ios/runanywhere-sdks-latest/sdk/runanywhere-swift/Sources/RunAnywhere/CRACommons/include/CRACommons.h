@@ -93,6 +93,10 @@
 #include "rac_rag_pipeline.h"
 #include "rac_rag.h"
 
+// Embeddings
+#include "rac_embeddings_types.h"
+#include "rac_embeddings_service.h"
+
 // =============================================================================
 // INFRASTRUCTURE - Events, Download, Model Management
 // =============================================================================

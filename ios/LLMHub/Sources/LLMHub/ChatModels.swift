@@ -11,6 +11,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
     public var tokensPerSecond: Double?
     public var attachmentImagePath: String?
     public var attachmentAudioPath: String?
+    public var attachmentDocumentName: String?   // display name of attached text document
 
     public init(
         id: UUID = UUID(),
@@ -21,7 +22,8 @@ public struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
         tokenCount: Int? = nil,
         tokensPerSecond: Double? = nil,
         attachmentImagePath: String? = nil,
-        attachmentAudioPath: String? = nil
+        attachmentAudioPath: String? = nil,
+        attachmentDocumentName: String? = nil
     ) {
         self.id = id
         self.content = content
@@ -32,6 +34,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
         self.tokensPerSecond = tokensPerSecond
         self.attachmentImagePath = attachmentImagePath
         self.attachmentAudioPath = attachmentAudioPath
+        self.attachmentDocumentName = attachmentDocumentName
     }
 }
 

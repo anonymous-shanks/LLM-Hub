@@ -134,6 +134,17 @@ class ChatViewModel: ObservableObject {
         static let enableThinking = "chat_enable_thinking"
     }
 
+    // MARK: - RAG/Memory
+    @Published var isIndexingDocument: Bool = false
+    @Published var ragDocumentCount: Int = 0
+
+    var isRagEnabled: Bool {
+        AppSettings.shared.ragEnabled && AppSettings.shared.selectedEmbeddingModelId != nil
+    }
+    var isMemoryEnabled: Bool {
+        AppSettings.shared.memoryEnabled && isRagEnabled
+    }
+
     private static let defaultGenerationSettings = ModelGenerationSettings(
         maxTokens: 512,
         contextWindow: 2048,
@@ -484,14 +495,14 @@ class ChatViewModel: ObservableObject {
     }
 
     @discardableResult
-    func sendMessage(imageURL: URL? = nil, audioURL: URL? = nil) -> Bool {
+    func sendMessage(imageURL: URL? = nil, audioURL: URL? = nil, documentURL: URL? = nil, documentName: String? = nil) -> Bool {
         let selectedModel = chatModel(named: selectedModelName)
         let effectiveImageURL = (enableVision && selectedModel?.supportsVision == true
             && (selectedModel.map { LLMBackend.shared.isVisionProjectorAvailable(for: $0) } ?? false)) ? imageURL : nil
         let effectiveAudioURL = (enableAudio && selectedModel?.supportsAudio == true) ? audioURL : nil
 
         let input = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hasAttachment = effectiveImageURL != nil || effectiveAudioURL != nil
+        let hasAttachment = effectiveImageURL != nil || effectiveAudioURL != nil || documentURL != nil
         guard !input.isEmpty || hasAttachment else { return false }
         guard !isGenerating else { return false }
 
@@ -499,6 +510,7 @@ class ChatViewModel: ObservableObject {
             if !input.isEmpty { return input }
             if effectiveImageURL != nil { return "Describe this image." }
             if effectiveAudioURL != nil { return "Transcribe this audio." }
+            if documentURL != nil { return "Summarize the attached document." }
             return ""
         }()
 
@@ -508,7 +520,6 @@ class ChatViewModel: ObservableObject {
         let shouldResetInferenceContext = (isContextBudgetExceededForSession || projectedFraction >= 0.995) && !messages.isEmpty
 
         if shouldResetInferenceContext {
-            // Keep existing transcript visible, but reset token accounting from this point forward.
             contextResetStartBySessionId[currentSessionId] = messages.count
         }
 
@@ -516,14 +527,15 @@ class ChatViewModel: ObservableObject {
             content: input,
             isFromUser: true,
             attachmentImagePath: effectiveImageURL?.path,
-            attachmentAudioPath: effectiveAudioURL?.path
+            attachmentAudioPath: effectiveAudioURL?.path,
+            attachmentDocumentName: documentName
         )
         messages.append(userMsg)
         inputText = ""
 
-        // Auto-update title if it's "New Chat"
+        // Auto-update title
         if currentTitle == AppSettings.shared.localized("drawer_new_chat") {
-            let titleSeed = !input.isEmpty ? input : (effectiveImageURL != nil ? "Image" : "Audio")
+            let titleSeed = !input.isEmpty ? input : (effectiveImageURL != nil ? "Image" : (documentURL != nil ? documentName ?? "Document" : "Audio"))
             currentTitle = String(titleSeed.prefix(20))
         }
 
@@ -532,19 +544,75 @@ class ChatViewModel: ObservableObject {
         activeGeneratingMessageId = aiMsg.id
         isGenerating = true
 
+        let chatId = currentSessionId
+        let ragEnabled = isRagEnabled
+        let memoryEnabled = isMemoryEnabled
+        let capturedDocURL = documentURL
+        let capturedDocName = documentName ?? "document"
+        let capturedPrompt = generationPrompt
+
         streamingTask = Task {
+            // 1. Index document into RAG if provided and RAG is enabled.
+            if let docURL = capturedDocURL, ragEnabled {
+                await MainActor.run { self.isIndexingDocument = true }
+                if let text = try? DocumentTextExtractor.extract(from: docURL) {
+                    _ = await RagServiceManager.shared.addDocument(chatId: chatId, text: text, fileName: capturedDocName)
+                    await MainActor.run {
+                        Task { self.ragDocumentCount = await RagServiceManager.shared.documentCount(chatId: chatId) }
+                    }
+                }
+                await MainActor.run { self.isIndexingDocument = false }
+            }
+
+            // 2. Build RAG context prefix.
+            var ragContextPrefix = ""
+            if ragEnabled && !capturedPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                var contextParts: [String] = []
+
+                // 2a. Global memory search.
+                if memoryEnabled {
+                    let memChunks = await RagServiceManager.shared.searchGlobalContext(
+                        query: capturedPrompt, maxResults: 3, relaxed: false
+                    )
+                    for chunk in memChunks {
+                        contextParts.append("📝 **\(chunk.fileName)**:\n\(chunk.content.trimmingCharacters(in: .whitespacesAndNewlines))")
+                    }
+                }
+
+                // 2b. Per-chat document search.
+                if await RagServiceManager.shared.hasDocuments(chatId: chatId) {
+                    let docChunks = await RagServiceManager.shared.searchRelevantContext(
+                        chatId: chatId, query: capturedPrompt, maxResults: 3
+                    )
+                    for chunk in docChunks {
+                        contextParts.append("📄 **\(chunk.fileName)**:\n\(chunk.content.trimmingCharacters(in: .whitespacesAndNewlines))")
+                    }
+                }
+
+                if !contextParts.isEmpty {
+                    ragContextPrefix = "---\n\nUSER MEMORY FACTS AND DOCUMENT CONTEXT:\n\nIMPORTANT: The following lines contain relevant information from user documents and memory. Use them to answer accurately.\n\n"
+                        + contextParts.joined(separator: "\n\n")
+                        + "\n\n---\n\n"
+                }
+            }
+
+            // 3. Load model and generate.
             await loadModelIfNecessary(force: shouldResetInferenceContext)
-            
+
             do {
                 if !llmBackend.isLoaded {
-                    // Report the real load failure when available (e.g. Apple Intelligence unavailable).
                     let msg = lastModelLoadErrorMessage ?? AppSettings.shared.localized("please_download_model")
                     await updateLastAIMessage(content: msg, isGenerating: false)
                     await MainActor.run { self.isGenerating = false }
                     return
                 }
-                
-                try await llmBackend.generate(prompt: generationPrompt, imageURL: effectiveImageURL, audioURL: effectiveAudioURL) { [weak self] content, tokens, tps in
+
+                try await llmBackend.generate(
+                    prompt: capturedPrompt,
+                    imageURL: effectiveImageURL,
+                    audioURL: effectiveAudioURL,
+                    systemPrompt: ragContextPrefix.isEmpty ? nil : ragContextPrefix
+                ) { [weak self] content, tokens, tps in
                     Task { @MainActor [weak self] in
                         guard let self = self else { return }
                         self.updateLastAIMessageSync(content: content, tokens: tokens, tps: tps)
@@ -554,7 +622,7 @@ class ChatViewModel: ObservableObject {
             } catch {
                 await updateLastAIMessage(content: "Error: \(error.localizedDescription)", isGenerating: false)
             }
-            
+
             await MainActor.run {
                 self.isGenerating = false
                 self.activeGeneratingMessageId = nil
@@ -687,7 +755,15 @@ class ChatViewModel: ObservableObject {
         chatStore.addSession(session)
         currentSessionId = session.id
         contextResetStartBySessionId[session.id] = 0
+        ragDocumentCount = 0
         objectWillChange.send()
+
+        // Populate new chat with global memory so RAG search includes it.
+        if isMemoryEnabled {
+            Task {
+                await RagServiceManager.shared.populateChat(chatId: session.id)
+            }
+        }
     }
 
     func deleteSession(_ id: UUID) {
@@ -878,6 +954,19 @@ struct MessageBubble: View {
                                     )
                             }
 
+                            if let docName = message.attachmentDocumentName {
+                                Label(docName, systemImage: "doc.text")
+                                    .font(.caption)
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 14)
+                                            .fill(LinearGradient(colors: [Color(hex: "4a7d5e").opacity(0.92), Color(hex: "2d5e40").opacity(0.94)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    )
+                            }
+
                             if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 Text(message.content)
                                     .font(.body)
@@ -952,6 +1041,7 @@ struct MessageBubble: View {
                 !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 || message.attachmentImagePath != nil
                 || message.attachmentAudioPath != nil
+                || message.attachmentDocumentName != nil
             ) {
                 HStack(spacing: 8) {
                     if message.isFromUser {
@@ -1359,8 +1449,11 @@ struct ChatScreen: View {
     @State private var selectedImageItem: PhotosPickerItem?
     @State private var attachedImageURL: URL?
     @State private var attachedAudioURL: URL?
+    @State private var attachedDocumentURL: URL?
+    @State private var attachedDocumentName: String?
     @State private var previewImagePath: String?
     @State private var showAudioImporter = false
+    @State private var showDocumentImporter = false
     @State private var hasInitializedChatSession = false
     @FocusState private var isComposerFocused: Bool
 
@@ -1389,6 +1482,17 @@ struct ChatScreen: View {
                 }
 
                 Spacer()
+
+                // RAG enabled badge
+                if vm.isRagEnabled {
+                    Text(settings.localized("rag_enabled"))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color(hex: "3a7d44").opacity(0.85))
+                        .clipShape(Capsule())
+                }
 
                 ZStack {
                     Circle()
@@ -1507,7 +1611,7 @@ struct ChatScreen: View {
 
             Divider()
 
-            if attachedImageURL != nil || attachedAudioURL != nil {
+            if attachedImageURL != nil || attachedAudioURL != nil || attachedDocumentURL != nil {
                 HStack(spacing: 8) {
                     if attachedImageURL != nil {
                         attachmentPill(label: settings.localized("vision"), icon: "photo") {
@@ -1518,6 +1622,12 @@ struct ChatScreen: View {
                     if attachedAudioURL != nil {
                         attachmentPill(label: settings.localized("audio"), icon: "waveform") {
                             attachedAudioURL = nil
+                        }
+                    }
+                    if let docName = attachedDocumentName {
+                        attachmentPill(label: docName, icon: "doc.text") {
+                            attachedDocumentURL = nil
+                            attachedDocumentName = nil
                         }
                     }
                     Spacer()
@@ -1558,6 +1668,19 @@ struct ChatScreen: View {
                     .disabled(vm.isGenerating)
                 }
 
+                // Document attachment button (always shown)
+                Button {
+                    showDocumentImporter = true
+                } label: {
+                    Image(systemName: "doc.badge.plus")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(attachedDocumentURL != nil ? ApolloPalette.accentStrong : .white.opacity(0.8))
+                        .padding(8)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(Circle())
+                }
+                .disabled(vm.isGenerating)
+
                 HStack(spacing: 8) {
                     TextField(settings.localized("type_a_message"), text: $vm.inputText, axis: .vertical)
                         .lineLimit(1...5)
@@ -1566,9 +1689,11 @@ struct ChatScreen: View {
                         .focused($isComposerFocused)
                         .foregroundColor(.white)
                         .onSubmit {
-                            if vm.sendMessage(imageURL: attachedImageURL, audioURL: attachedAudioURL) {
+                            if vm.sendMessage(imageURL: attachedImageURL, audioURL: attachedAudioURL, documentURL: attachedDocumentURL, documentName: attachedDocumentName) {
                                 attachedImageURL = nil
                                 attachedAudioURL = nil
+                                attachedDocumentURL = nil
+                                attachedDocumentName = nil
                                 selectedImageItem = nil
                             }
                         }
@@ -1578,9 +1703,11 @@ struct ChatScreen: View {
                         if vm.isGenerating {
                             vm.stopGeneration()
                         } else {
-                            if vm.sendMessage(imageURL: attachedImageURL, audioURL: attachedAudioURL) {
+                            if vm.sendMessage(imageURL: attachedImageURL, audioURL: attachedAudioURL, documentURL: attachedDocumentURL, documentName: attachedDocumentName) {
                                 attachedImageURL = nil
                                 attachedAudioURL = nil
+                                attachedDocumentURL = nil
+                                attachedDocumentName = nil
                                 selectedImageItem = nil
                             }
                         }
@@ -1598,6 +1725,7 @@ struct ChatScreen: View {
                             && vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                             && attachedImageURL == nil
                             && attachedAudioURL == nil
+                            && attachedDocumentURL == nil
                     )
                 }
                 .background(Color.white.opacity(0.08))
@@ -1658,6 +1786,15 @@ struct ChatScreen: View {
         ) { result in
             guard case .success(let urls) = result, let sourceURL = urls.first else { return }
             attachedAudioURL = copyAttachmentToTemp(sourceURL, preferredExtension: sourceURL.pathExtension.isEmpty ? "m4a" : sourceURL.pathExtension)
+        }
+        .fileImporter(
+            isPresented: $showDocumentImporter,
+            allowedContentTypes: DocumentTextExtractor.supportedTypes,
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result, let sourceURL = urls.first else { return }
+            attachedDocumentURL = sourceURL
+            attachedDocumentName = sourceURL.lastPathComponent
         }
         .onChange(of: selectedImageItem) { _, item in
             guard let item else {

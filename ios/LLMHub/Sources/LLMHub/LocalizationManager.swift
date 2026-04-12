@@ -110,6 +110,15 @@ final class AppSettings: ObservableObject {
     @Published var autoReadoutEnabled: Bool {
         didSet { UserDefaults.standard.set(autoReadoutEnabled, forKey: "auto_readout_enabled") }
     }
+    @Published var selectedEmbeddingModelId: String? {
+        didSet { UserDefaults.standard.set(selectedEmbeddingModelId, forKey: "selected_embedding_model_id") }
+    }
+    @Published var ragEnabled: Bool {
+        didSet { UserDefaults.standard.set(ragEnabled, forKey: "rag_enabled") }
+    }
+    @Published var memoryEnabled: Bool {
+        didSet { UserDefaults.standard.set(memoryEnabled, forKey: "memory_enabled") }
+    }
 
     private init() {
         let langRaw = UserDefaults.standard.string(forKey: "app_language") ?? "system"
@@ -119,6 +128,9 @@ final class AppSettings: ObservableObject {
         streamingEnabled = UserDefaults.standard.bool(forKey: "streaming_enabled")
         showResultStatus = UserDefaults.standard.object(forKey: "show_result_status") as? Bool ?? true
         autoReadoutEnabled = UserDefaults.standard.bool(forKey: "auto_readout_enabled")
+        selectedEmbeddingModelId = UserDefaults.standard.string(forKey: "selected_embedding_model_id")
+        ragEnabled = UserDefaults.standard.bool(forKey: "rag_enabled")
+        memoryEnabled = UserDefaults.standard.bool(forKey: "memory_enabled")
     }
 
     private var activeLocalizationCode: String {

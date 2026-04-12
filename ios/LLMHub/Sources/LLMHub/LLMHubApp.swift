@@ -22,6 +22,10 @@ struct LLMHubApp: App {
                 .preferredColorScheme(.dark)
                 .environment(\.locale, settings.selectedLanguage.locale)
                 .environment(\.layoutDirection, settings.selectedLanguage.isRTL ? .rightToLeft : .leftToRight)
+                .task {
+                    // Boot embedding / RAG if a model was previously selected.
+                    await RagServiceManager.shared.initialize(modelId: settings.selectedEmbeddingModelId)
+                }
         }
     }
 }

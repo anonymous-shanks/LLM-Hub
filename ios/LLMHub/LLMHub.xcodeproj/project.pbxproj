@@ -15,6 +15,11 @@
 		3D9B9E094861BF2162D95F61 /* RunAnywhere in Frameworks */ = {isa = PBXBuildFile; productRef = 9307F4EE8A20C529993E87D1 /* RunAnywhere */; };
 		3DAB449A0AE3C67F8D2F39B1 /* FeatureScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2A92FE9D6B44A3156E987C2 /* FeatureScreens.swift */; };
 		467EEBBF61BCADC562B0C42C /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0805DB9589154E465145E2DB /* ChatModels.swift */; };
+				1D92A835955F48E1AA4AEEEF /* EmbeddingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59683F4EC0364144B429B48B /* EmbeddingService.swift */; };
+				7410CEC1D27C4FE7BC6C6486 /* RagService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C74D4095CAC843D4AD4F61B3 /* RagService.swift */; };
+				CB4333B9DD904E3DBB3184F9 /* MemoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27AC91B048B74436A4029665 /* MemoryStore.swift */; };
+				2CD0F1D1F3E04E66AA24812C /* RagServiceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9DF631F25054004865F2A2B /* RagServiceManager.swift */; };
+				ABE54570472C4132920C1447 /* DocumentTextExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D399F03307D44289BC766AD9 /* DocumentTextExtractor.swift */; };
 		53F6C1EA0149E74AC5BB3E22 /* LLMBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECD7AAE029AF6E8F7EA01B3D /* LLMBackend.swift */; };
 		59504FB10CC196F7E32BAB32 /* ModelData.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3C1A239A9E6DC307A0767C5 /* ModelData.swift */; };
 		8372657E94B22EF042E769D9 /* ModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D54909FE8CC139164BABB54 /* ModelManager.swift */; };
@@ -36,6 +41,11 @@
 /* Begin PBXFileReference section */
 		05BF91E2CF47146ED081A0A8 /* ModelDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDownloader.swift; sourceTree = "<group>"; };
 		0805DB9589154E465145E2DB /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
+				59683F4EC0364144B429B48B /* EmbeddingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddingService.swift; sourceTree = "<group>"; };
+				C74D4095CAC843D4AD4F61B3 /* RagService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RagService.swift; sourceTree = "<group>"; };
+				27AC91B048B74436A4029665 /* MemoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryStore.swift; sourceTree = "<group>"; };
+				B9DF631F25054004865F2A2B /* RagServiceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RagServiceManager.swift; sourceTree = "<group>"; };
+				D399F03307D44289BC766AD9 /* DocumentTextExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentTextExtractor.swift; sourceTree = "<group>"; };
 		223C0ACCB98929BFEDBB0B16 /* it */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = it; path = it.lproj/Localizable.strings; sourceTree = "<group>"; };
 		2E4B5F6A7C8D9E0F1A2B3C4D /* ApolloTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApolloTheme.swift; sourceTree = "<group>"; };
 		2FDAEABFBFE266EFF8492FEB /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -102,6 +112,11 @@
 			children = (
 				2E4B5F6A7C8D9E0F1A2B3C4D /* ApolloTheme.swift */,
 				0805DB9589154E465145E2DB /* ChatModels.swift */,
+					59683F4EC0364144B429B48B /* EmbeddingService.swift */,
+					C74D4095CAC843D4AD4F61B3 /* RagService.swift */,
+					27AC91B048B74436A4029665 /* MemoryStore.swift */,
+					B9DF631F25054004865F2A2B /* RagServiceManager.swift */,
+					D399F03307D44289BC766AD9 /* DocumentTextExtractor.swift */,
 				C54A0BA40DE3F5B7A1ED9A63 /* ChatScreen.swift */,
 				E06F261B9A91F8AA8BAA4778 /* ChatSettingsSheet.swift */,
 				C56D7A951BFDFE19E54CB73B /* ChatStore.swift */,
@@ -238,6 +253,11 @@
 			files = (
 				1F3A9E5C7B2E4D6F8A1B2C3D /* ApolloTheme.swift in Sources */,
 				467EEBBF61BCADC562B0C42C /* ChatModels.swift in Sources */,
+					1D92A835955F48E1AA4AEEEF /* EmbeddingService.swift in Sources */,
+					7410CEC1D27C4FE7BC6C6486 /* RagService.swift in Sources */,
+					CB4333B9DD904E3DBB3184F9 /* MemoryStore.swift in Sources */,
+					2CD0F1D1F3E04E66AA24812C /* RagServiceManager.swift in Sources */,
+					ABE54570472C4132920C1447 /* DocumentTextExtractor.swift in Sources */,
 				3701462555C0F00B7A0F5B01 /* ChatScreen.swift in Sources */,
 				DF4968608455CAC5D2C20BE3 /* ChatSettingsSheet.swift in Sources */,
 				98A2325EC92DABBC3DFE2229 /* ChatStore.swift in Sources */,

@@ -2154,5 +2154,59 @@ public static let models: [AIModel] = [
         modelFormat: .coreml,
         additionalFiles: []
     ),
+
+    // MARK: - EmbeddingGemma 300M GGUF (unsloth) — Embedding Models for RAG
+
+    AIModel(
+        id: "embeddinggemma-300m-q4-0",
+        name: "EmbeddingGemma 300M (Q4_0)",
+        description: "Google EmbeddingGemma 300M quantized to Q4_0. Lightweight semantic embedding model for RAG and memory. Use with the RAG feature in AI Chat. (278 MB)",
+        url: "https://huggingface.co/unsloth/embeddinggemma-300m-GGUF/resolve/main/embeddinggemma-300m-Q4_0.gguf?download=true",
+        category: .embedding,
+        sizeBytes: 291669606,
+        source: "Google / Unsloth",
+        supportsVision: false,
+        supportsAudio: false,
+        supportsThinking: false,
+        supportsGpu: true,
+        requirements: ModelRequirements(minRamGB: 1, recommendedRamGB: 2),
+        contextWindowSize: 512,
+        modelFormat: .gguf,
+        additionalFiles: []
+    ),
+    AIModel(
+        id: "embeddinggemma-300m-q8-0",
+        name: "EmbeddingGemma 300M (Q8_0)",
+        description: "Google EmbeddingGemma 300M quantized to Q8_0. Higher-quality semantic embeddings for RAG and memory. (329 MB)",
+        url: "https://huggingface.co/unsloth/embeddinggemma-300m-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf?download=true",
+        category: .embedding,
+        sizeBytes: 345039502,
+        source: "Google / Unsloth",
+        supportsVision: false,
+        supportsAudio: false,
+        supportsThinking: false,
+        supportsGpu: true,
+        requirements: ModelRequirements(minRamGB: 1, recommendedRamGB: 2),
+        contextWindowSize: 512,
+        modelFormat: .gguf,
+        additionalFiles: []
+    ),
+    AIModel(
+        id: "embeddinggemma-300m-bf16",
+        name: "EmbeddingGemma 300M (BF16)",
+        description: "Google EmbeddingGemma 300M in BF16 precision. Full-precision semantic embeddings for RAG and memory. Best quality. (612 MB)",
+        url: "https://huggingface.co/unsloth/embeddinggemma-300m-GGUF/resolve/main/embeddinggemma-300M-BF16.gguf?download=true",
+        category: .embedding,
+        sizeBytes: 641729638,
+        source: "Google / Unsloth",
+        supportsVision: false,
+        supportsAudio: false,
+        supportsThinking: false,
+        supportsGpu: true,
+        requirements: ModelRequirements(minRamGB: 2, recommendedRamGB: 3),
+        contextWindowSize: 512,
+        modelFormat: .gguf,
+        additionalFiles: []
+    ),
 ]
 }

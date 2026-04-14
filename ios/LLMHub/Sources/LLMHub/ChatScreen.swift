@@ -12,6 +12,311 @@ import FoundationModels
 import ImageIO
 #endif
 
+// MARK: - Web Search Service
+
+private struct WebSearchResult {
+    let title: String
+    let snippet: String
+    let url: String
+    let source: String
+}
+
+private actor WebSearchService {
+    static let shared = WebSearchService()
+
+    // Firefox mobile UA — same as Android build, avoids DuckDuckGo bot blocks
+    private static let firefoxUA = "Mozilla/5.0 (Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0"
+
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 12
+        config.timeoutIntervalForResource = 20
+        config.httpShouldSetCookies = true
+        config.httpCookieAcceptPolicy = .always
+        return URLSession(configuration: config)
+    }()
+
+    // MARK: - Public API
+
+    func search(query: String, maxResults: Int = 5) async -> [WebSearchResult] {
+        // 1. Try content-based search (fetches actual page content like Android does)
+        let contentResults = await searchWithContent(query: query, maxResults: maxResults)
+        if !contentResults.isEmpty { return contentResults }
+
+        // 2. Fallback: DuckDuckGo Instant Answer JSON API
+        if let instantResults = await searchInstantAnswer(query: query), !instantResults.isEmpty {
+            return Array(instantResults.prefix(maxResults))
+        }
+
+        // 3. Fallback: DuckDuckGo HTML scrape
+        let htmlResults = await searchHTML(query: query, maxResults: maxResults)
+        return htmlResults
+    }
+
+    // MARK: - Content-based search (mirrors Android searchWithContent)
+
+    private struct UrlData { let title: String; let url: String }
+
+    private func searchWithContent(query: String, maxResults: Int) async -> [WebSearchResult] {
+        // If query contains a URL, fetch that page directly
+        if let directURL = extractURL(from: query) {
+            let content = await fetchPageContent(urlString: directURL)
+            if !content.isEmpty {
+                return [WebSearchResult(
+                    title: "Content from \(domain(directURL))",
+                    snippet: content,
+                    url: directURL,
+                    source: domain(directURL)
+                )]
+            }
+        }
+
+        // Get search result URLs from DuckDuckGo HTML
+        let urlData = await getSearchURLs(query: query, maxResults: maxResults)
+        guard !urlData.isEmpty else { return [] }
+
+        var results: [WebSearchResult] = []
+        for item in urlData {
+            if results.count >= maxResults { break }
+            let content = await fetchPageContent(urlString: item.url)
+            guard !content.isEmpty else { continue }
+            results.append(WebSearchResult(
+                title: item.title,
+                snippet: String(content.prefix(500)),
+                url: item.url,
+                source: domain(item.url)
+            ))
+        }
+        return results
+    }
+
+    private func getSearchURLs(query: String, maxResults: Int) async -> [UrlData] {
+        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://duckduckgo.com/html/?q=\(encoded)")
+        else { return [] }
+
+        var req = URLRequest(url: url)
+        req.setValue(Self.firefoxUA, forHTTPHeaderField: "User-Agent")
+        req.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        req.setValue("en-US,en;q=0.5", forHTTPHeaderField: "Accept-Language")
+
+        guard let (data, resp) = try? await session.data(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200,
+              let html = String(data: data, encoding: .utf8)
+        else { return [] }
+
+        return extractURLsFromHTML(html, maxResults: maxResults)
+    }
+
+    private func extractURLsFromHTML(_ html: String, maxResults: Int) -> [UrlData] {
+        var results: [UrlData] = []
+        let nsHTML = html as NSString
+        let range = NSRange(location: 0, length: nsHTML.length)
+
+        // Pattern 1: standard DuckDuckGo result__a links
+        if let re = try? NSRegularExpression(
+            pattern: #"<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>(.*?)</a>"#,
+            options: .dotMatchesLineSeparators
+        ) {
+            for m in re.matches(in: html, range: range) {
+                if results.count >= maxResults { break }
+                let urlStr = nsHTML.substring(with: m.range(at: 1))
+                let title  = cleanHTML(nsHTML.substring(with: m.range(at: 2)))
+                if isValidContentURL(urlStr), title.count > 5 {
+                    results.append(UrlData(title: String(title.prefix(100)), url: urlStr))
+                }
+            }
+        }
+
+        // Pattern 2: any https links with text (generic fallback)
+        if results.isEmpty,
+           let re = try? NSRegularExpression(
+               pattern: #"<a[^>]+href="(https?://[^"]+)"[^>]*>(.*?)</a>"#,
+               options: .dotMatchesLineSeparators
+           ) {
+            for m in re.matches(in: html, range: range) {
+                if results.count >= maxResults { break }
+                let urlStr = nsHTML.substring(with: m.range(at: 1))
+                let title  = cleanHTML(nsHTML.substring(with: m.range(at: 2)))
+                if isValidContentURL(urlStr), title.count > 5 {
+                    results.append(UrlData(title: String(title.prefix(100)), url: urlStr))
+                }
+            }
+        }
+
+        return results
+    }
+
+    private func fetchPageContent(urlString: String) async -> String {
+        guard let url = URL(string: urlString) else { return "" }
+        var req = URLRequest(url: url)
+        req.setValue(Self.firefoxUA, forHTTPHeaderField: "User-Agent")
+        req.timeoutInterval = 8
+
+        guard let (data, resp) = try? await session.data(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200,
+              let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+        else { return "" }
+
+        return extractTextFromHTML(html)
+    }
+
+    private func extractTextFromHTML(_ html: String) -> String {
+        var s = html
+        // Strip scripts and styles
+        if let re = try? NSRegularExpression(pattern: "<(script|style)[^>]*>.*?</(script|style)>", options: .dotMatchesLineSeparators) {
+            s = re.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "")
+        }
+        s = cleanHTML(s)
+        // Keep only meaningful sentences
+        let sentences = s.components(separatedBy: CharacterSet(charactersIn: ".!?"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.count > 20 && $0.count < 500 && $0.split(separator: " ").count > 4
+                   && !$0.lowercased().contains("click")
+                   && !$0.lowercased().contains("menu")
+                   && !$0.lowercased().contains("navigation") }
+        return String(sentences.prefix(5).joined(separator: ". ").prefix(1000))
+    }
+
+    private func isValidContentURL(_ url: String) -> Bool {
+        let lower = url.lowercased()
+        return lower.hasPrefix("http")
+            && !lower.contains("duckduckgo.com")
+            && !lower.contains("javascript:")
+            && !lower.contains("#")
+            && !lower.contains("privacy")
+            && !lower.contains("settings")
+            && !lower.contains("ads")
+    }
+
+    private func extractURL(from text: String) -> String? {
+        let patterns = [
+            #"https?://[^\s]+"#,
+            #"www\.[^\s]+"#,
+        ]
+        for pattern in patterns {
+            if let re = try? NSRegularExpression(pattern: pattern),
+               let m = re.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) {
+                var match = (text as NSString).substring(with: m.range)
+                if !match.hasPrefix("http") { match = "https://\(match)" }
+                return match
+            }
+        }
+        return nil
+    }
+
+    // MARK: - DuckDuckGo Instant Answer (JSON API)
+
+    private func searchInstantAnswer(query: String) async -> [WebSearchResult]? {
+        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://api.duckduckgo.com/?q=\(encoded)&format=json&no_html=1&skip_disambig=1")
+        else { return nil }
+
+        var req = URLRequest(url: url)
+        req.setValue("LLM Hub iOS", forHTTPHeaderField: "User-Agent")
+
+        guard let (data, _) = try? await session.data(for: req),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+
+        var results: [WebSearchResult] = []
+        if let abstract = json["Abstract"] as? String, !abstract.isEmpty {
+            let src = json["AbstractSource"] as? String ?? "DuckDuckGo"
+            results.append(WebSearchResult(title: src, snippet: abstract, url: json["AbstractURL"] as? String ?? "", source: src))
+        }
+        if let def = json["Definition"] as? String, !def.isEmpty {
+            let src = json["DefinitionSource"] as? String ?? "DuckDuckGo"
+            results.append(WebSearchResult(title: "Definition", snippet: def, url: json["DefinitionURL"] as? String ?? "", source: src))
+        }
+        if let topics = json["RelatedTopics"] as? [[String: Any]] {
+            for topic in topics.prefix(3) {
+                if let text = topic["Text"] as? String, !text.isEmpty {
+                    results.append(WebSearchResult(title: "Related", snippet: text, url: topic["FirstURL"] as? String ?? "", source: "DuckDuckGo"))
+                }
+            }
+        }
+        return results.isEmpty ? nil : results
+    }
+
+    // MARK: - DuckDuckGo HTML fallback
+
+    private func searchHTML(query: String, maxResults: Int) async -> [WebSearchResult] {
+        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://duckduckgo.com/html/?q=\(encoded)")
+        else { return [] }
+
+        var req = URLRequest(url: url)
+        req.setValue(Self.firefoxUA, forHTTPHeaderField: "User-Agent")
+        req.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        req.setValue("en-US,en;q=0.5", forHTTPHeaderField: "Accept-Language")
+
+        guard let (data, resp) = try? await session.data(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200,
+              let html = String(data: data, encoding: .utf8)
+        else { return [] }
+
+        return parseHTMLResults(html: html, maxResults: maxResults)
+    }
+
+    private func parseHTMLResults(html: String, maxResults: Int) -> [WebSearchResult] {
+        var results: [WebSearchResult] = []
+        let nsHTML = html as NSString
+        let range = NSRange(location: 0, length: nsHTML.length)
+
+        let patterns: [(title: String, snippet: String, url: String)] = [
+            // Approach 1: DuckDuckGo classic classes
+            (#"<a class="result__a"[^>]*>(.*?)</a>"#,
+             #"<a class="result__snippet"[^>]*>(.*?)</a>"#,
+             #"<a class="result__url"[^>]*href="([^"]*)"[^>]*>"#),
+        ]
+
+        for pat in patterns {
+            guard results.isEmpty,
+                  let tRe = try? NSRegularExpression(pattern: pat.title,   options: .dotMatchesLineSeparators),
+                  let sRe = try? NSRegularExpression(pattern: pat.snippet, options: .dotMatchesLineSeparators),
+                  let uRe = try? NSRegularExpression(pattern: pat.url,     options: [])
+            else { continue }
+            let titles   = tRe.matches(in: html, range: range)
+            let snippets = sRe.matches(in: html, range: range)
+            let urls     = uRe.matches(in: html, range: range)
+            let count    = min(titles.count, min(snippets.count, min(urls.count, maxResults)))
+            for i in 0..<count {
+                let t = cleanHTML(nsHTML.substring(with: titles[i].range(at: 1)))
+                let s = cleanHTML(nsHTML.substring(with: snippets[i].range(at: 1)))
+                let u = nsHTML.substring(with: urls[i].range(at: 1))
+                if !t.isEmpty, !s.isEmpty {
+                    results.append(WebSearchResult(title: t, snippet: s, url: u, source: domain(u)))
+                }
+            }
+        }
+        return results
+    }
+
+    // MARK: - Helpers
+
+    private func cleanHTML(_ raw: String) -> String {
+        var s = raw
+        if let re = try? NSRegularExpression(pattern: "<[^>]*>") {
+            s = re.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: " ")
+        }
+        return s
+            .replacingOccurrences(of: "&amp;",  with: "&")
+            .replacingOccurrences(of: "&lt;",   with: "<")
+            .replacingOccurrences(of: "&gt;",   with: ">")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;",  with: "'")
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func domain(_ urlString: String) -> String {
+        URL(string: urlString)?.host?.replacingOccurrences(of: "www.", with: "") ?? ""
+    }
+}
+
+// MARK: -
+
 private func persistentAttachmentDirectoryURL() -> URL {
     let fileManager = FileManager.default
     let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -232,6 +537,10 @@ class ChatViewModel: ObservableObject {
     @Published var ragDocumentCount: Int = 0
     /// Char count of pending attached document (used for context ring when RAG is off).
     @Published var pendingAttachedDocumentChars: Int = 0
+
+    // MARK: - Web Search
+    @Published var isWebSearchEnabled: Bool = false
+    @Published var isSearching: Bool = false
 
     var isRagEnabled: Bool {
         AppSettings.shared.selectedEmbeddingModelId != nil
@@ -591,6 +900,173 @@ class ChatViewModel: ObservableObject {
         llmBackend.currentlyLoadedModel = nil
     }
 
+    // MARK: - Web-search-enabled send
+    @discardableResult
+    func sendMessageWithWebSearch(imageURL: URL? = nil, documentURL: URL? = nil, documentName: String? = nil) -> Bool {
+        let input = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty else { return false }
+        guard !isGenerating else { return false }
+
+        let userMsg = ChatMessage(content: input, isFromUser: true, attachmentDocumentName: documentName)
+        messages.append(userMsg)
+        inputText = ""
+        pendingAttachedDocumentChars = 0
+
+        if currentTitle == AppSettings.shared.localized("drawer_new_chat") {
+            currentTitle = String(input.prefix(20))
+        }
+
+        let aiMsg = ChatMessage(content: AppSettings.shared.localized("web_searching"), isFromUser: false, isGenerating: true)
+        messages.append(aiMsg)
+        activeGeneratingMessageId = aiMsg.id
+        isGenerating = true
+        isSearching = true
+
+        let chatId = currentSessionId
+        let capturedPrompt = input
+        let capturedDocURL = documentURL
+        let capturedDocName = documentName ?? "document"
+        let ragEnabled = isRagEnabled
+
+        streamingTask = Task {
+            await loadModelIfNecessary()
+
+            if !llmBackend.isLoaded {
+                let msg = lastModelLoadErrorMessage ?? AppSettings.shared.localized("please_download_model")
+                await updateLastAIMessage(content: msg, isGenerating: false)
+                await MainActor.run {
+                    self.isGenerating = false
+                    self.isSearching = false
+                }
+                return
+            }
+
+            // 1. Perform web search BEFORE calling LLM (mirrors Android InferenceService approach)
+            let searchQuery = Self.extractSearchQuery(from: capturedPrompt)
+            let searchResults = await WebSearchService.shared.search(query: searchQuery, maxResults: 5)
+            let resultCount = searchResults.count
+
+            await MainActor.run {
+                self.isSearching = false
+                if let idx = self.messages.firstIndex(where: { $0.id == self.activeGeneratingMessageId }) {
+                    if resultCount > 0 {
+                        self.messages[idx].content = String(
+                            format: AppSettings.shared.localized("web_search_found_results"), resultCount
+                        )
+                    } else {
+                        self.messages[idx].content = AppSettings.shared.localized("web_search_no_results") + "\n\n"
+                    }
+                }
+            }
+
+            // 2. Extract document text if attached.
+            var inlineDocumentText: String? = nil
+            if let docURL = capturedDocURL {
+                inlineDocumentText = try? DocumentTextExtractor.extract(from: docURL)
+            }
+
+            if capturedDocURL != nil && ragEnabled {
+                await MainActor.run { self.isIndexingDocument = true }
+                if let text = inlineDocumentText {
+                    _ = await RagServiceManager.shared.addDocument(chatId: chatId, text: text, fileName: capturedDocName)
+                    let count = await RagServiceManager.shared.documentCount(chatId: chatId)
+                    await MainActor.run { self.ragDocumentCount = count }
+                }
+                await MainActor.run { self.isIndexingDocument = false }
+            }
+
+            // 3. Build RAG context prefix (same as sendMessage)
+            var ragContextPrefix = ""
+            if ragEnabled {
+                var contextParts: [String] = []
+                if isMemoryEnabled {
+                    let memChunks = await RagServiceManager.shared.searchGlobalContext(query: capturedPrompt, maxResults: 3, relaxed: false)
+                    for chunk in memChunks {
+                        contextParts.append("📝 **\(chunk.fileName)**:\n\(chunk.content.trimmingCharacters(in: .whitespacesAndNewlines))")
+                    }
+                }
+                if await RagServiceManager.shared.hasDocuments(chatId: chatId) {
+                    let docChunks = await RagServiceManager.shared.searchRelevantContext(chatId: chatId, query: capturedPrompt, maxResults: 3)
+                    for chunk in docChunks {
+                        contextParts.append("📄 **\(chunk.fileName)**:\n\(chunk.content.trimmingCharacters(in: .whitespacesAndNewlines))")
+                    }
+                }
+                if !contextParts.isEmpty {
+                    ragContextPrefix = "---\n\nUSER MEMORY FACTS AND DOCUMENT CONTEXT:\n\n"
+                        + contextParts.joined(separator: "\n\n")
+                        + "\n\n---\n\n"
+                }
+            } else if let docText = inlineDocumentText, !docText.isEmpty {
+                ragContextPrefix = "The user has attached the following document (\(capturedDocName)):\n\n\(String(docText.prefix(8000)))\n\n---\n\n"
+            }
+
+            // 4. Build search-enhanced system prompt (mirrors Android enhancedPrompt logic)
+            let systemPrompt: String
+            if searchResults.isEmpty {
+                systemPrompt = ragContextPrefix.isEmpty ? "" : ragContextPrefix
+            } else {
+                let resultsText = searchResults.enumerated().map { i, r in
+                    "SOURCE: \(r.source)\nTITLE: \(r.title)\nCONTENT: \(r.snippet)\n---"
+                }.joined(separator: "\n\n")
+
+                systemPrompt = """
+                \(ragContextPrefix)CURRENT WEB SEARCH RESULTS:
+                \(resultsText)
+
+                Based on the above current web search results, please answer the user's question: "\(capturedPrompt)"
+
+                IMPORTANT INSTRUCTIONS:
+                - Use ONLY the information from the web search results above
+                - If the search results contain the answer, provide a clear and specific response
+                - If the search results don't contain enough information, say so clearly
+                - For dates and events, be specific based on what you find in the results
+                - Do not make up information not found in the search results
+                """
+            }
+
+            // 5. Stream using normal LLM generation (NOT generateWithTools) — same path as sendMessage
+            do {
+                try await llmBackend.generate(
+                    prompt: capturedPrompt,
+                    systemPrompt: systemPrompt.isEmpty ? nil : systemPrompt
+                ) { [weak self] content, tokens, tps in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        self.updateLastAIMessageSync(content: content, tokens: tokens, tps: tps)
+                    }
+                }
+                await MainActor.run { self.finishGeneratingMessage() }
+            } catch {
+                await updateLastAIMessage(content: "Error: \(error.localizedDescription)", isGenerating: false)
+            }
+
+            await MainActor.run {
+                self.isGenerating = false
+                self.isSearching = false
+                self.activeGeneratingMessageId = nil
+            }
+        }
+
+        return true
+    }
+
+    // Strips conversational filler to get a clean search query (mirrors Android SearchIntentDetector.extractSearchQuery)
+    private static func extractSearchQuery(from prompt: String) -> String {
+        var q = prompt
+        let fillers = [
+            "search for ", "look up ", "find information about ", "find info about ",
+            "what's the latest on ", "tell me about ", "please ", "what's the ",
+            "what is the ", "can you search for ", "google ", "search "
+        ]
+        for filler in fillers {
+            if q.lowercased().hasPrefix(filler) {
+                q = String(q.dropFirst(filler.count))
+                break
+            }
+        }
+        return q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? prompt : q.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     @discardableResult
     func sendMessage(imageURL: URL? = nil, audioURL: URL? = nil, documentURL: URL? = nil, documentName: String? = nil) -> Bool {
         let selectedModel = chatModel(named: selectedModelName)
@@ -657,13 +1133,12 @@ class ChatViewModel: ObservableObject {
             }
 
             // 1b. Index document into RAG if RAG is enabled.
-            if let docURL = capturedDocURL, ragEnabled {
+            if capturedDocURL != nil && ragEnabled {
                 await MainActor.run { self.isIndexingDocument = true }
                 if let text = inlineDocumentText {
                     _ = await RagServiceManager.shared.addDocument(chatId: chatId, text: text, fileName: capturedDocName)
-                    await MainActor.run {
-                        Task { self.ragDocumentCount = await RagServiceManager.shared.documentCount(chatId: chatId) }
-                    }
+                    let count = await RagServiceManager.shared.documentCount(chatId: chatId)
+                    await MainActor.run { self.ragDocumentCount = count }
                 }
                 await MainActor.run { self.isIndexingDocument = false }
             }
@@ -1753,62 +2228,91 @@ struct ChatScreen: View {
                 .padding(.top, 6)
             }
 
-            HStack(spacing: 8) {
-                let selectedModel = ModelData.models.first(where: { $0.name == vm.selectedModelName })
-                let canAttachVision = (selectedModel?.supportsVision == true) && vm.enableVision
-                    && (selectedModel.map { LLMBackend.shared.isVisionProjectorAvailable(for: $0) } ?? false)
-
-                // ─── + attach menu ───────────────────────────────────────────
-                Button {
-                    showAttachMenu = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(
-                            (attachedImageURL != nil || attachedDocumentURL != nil)
-                                ? ApolloPalette.accentStrong : .white.opacity(0.8)
-                        )
-                        .padding(8)
-                        .background(Color.white.opacity(0.1))
-                        .clipShape(Circle())
-                }
-                .disabled(vm.isGenerating)
-                .confirmationDialog("", isPresented: $showAttachMenu) {
-                    Button(settings.localized("images")) {
-                        showPhotosPicker = true
+            // ─── Liquid Apollo-style tall input box ──────────────────────────
+            VStack(spacing: 0) {
+                // Text field fills the top of the box
+                ZStack(alignment: .leading) {
+                    if micTranscriber.isPreparing {
+                        Text(settings.localized("preparing_mic"))
+                            .foregroundColor(.white.opacity(0.45))
+                            .font(.body)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    Button(settings.localized("documents")) {
-                        showDocumentImporter = true
-                    }
-                    Button(settings.localized("audio_file")) {
-                        showAudioTranscribeImporter = true
-                    }
-                    Button(settings.localized("cancel"), role: .cancel) {}
-                }
-
-                // ─── text field ──────────────────────────────────────────────
-                HStack(spacing: 8) {
-                    ZStack(alignment: .leading) {
-                        if micTranscriber.isPreparing {
-                            Text(settings.localized("preparing_mic"))
-                                .foregroundColor(.white.opacity(0.5))
-                                .font(.body)
-                                .padding(.leading, 18)
-                        }
-                        TextField(settings.localized("type_a_message"), text: $vm.inputText, axis: .vertical)
-                            .lineLimit(1...5)
-                            .padding(.leading, 18)
-                            .padding(.vertical, 14)
-                            .focused($isComposerFocused)
-                            .foregroundColor(.white)
-                            .onSubmit {
+                    TextField(settings.localized("type_a_message"), text: $vm.inputText, axis: .vertical)
+                        .lineLimit(1...6)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                        .padding(.bottom, 8)
+                        .focused($isComposerFocused)
+                        .foregroundColor(.white)
+                        .onSubmit {
+                            if vm.isWebSearchEnabled {
+                                if vm.sendMessageWithWebSearch(documentURL: attachedDocumentURL, documentName: attachedDocumentName) {
+                                    clearAttachments()
+                                }
+                            } else {
                                 if vm.sendMessage(imageURL: attachedImageURL, audioURL: attachedAudioURL, documentURL: attachedDocumentURL, documentName: attachedDocumentName) {
                                     clearAttachments()
                                 }
                             }
+                        }
+                }
+
+                // Action row — all buttons in one row at the bottom of the box
+                HStack(spacing: 6) {
+                    // ─── + attach ────────────────────────────────────────────
+                    Button {
+                        showAttachMenu = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(
+                                (attachedImageURL != nil || attachedDocumentURL != nil)
+                                    ? ApolloPalette.accentStrong : .white.opacity(0.75)
+                            )
+                            .frame(width: 34, height: 34)
+                            .background(Color.white.opacity(0.09))
+                            .clipShape(Circle())
+                    }
+                    .disabled(vm.isGenerating)
+                    .confirmationDialog("", isPresented: $showAttachMenu) {
+                        Button(settings.localized("images"))    { showPhotosPicker = true }
+                        Button(settings.localized("documents")) { showDocumentImporter = true }
+                        Button(settings.localized("audio_file")){ showAudioTranscribeImporter = true }
+                        Button(settings.localized("cancel"), role: .cancel) {}
                     }
 
-                    // ─── mic button (live speech → input) ───────────────────
+                    // ─── 🌐 Web Search toggle ─────────────────────────────────
+                    Button {
+                        vm.isWebSearchEnabled.toggle()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: vm.isSearching ? "arrow.triangle.2.circlepath" : "globe")
+                                .font(.system(size: 12, weight: .semibold))
+                                .symbolEffect(.pulse, isActive: vm.isSearching)
+                            Text(settings.localized("web_search"))
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundColor(vm.isWebSearchEnabled ? .black : .white.opacity(0.75))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(vm.isWebSearchEnabled ? Color.white : Color.white.opacity(0.09))
+                        .clipShape(Capsule())
+                        .overlay(
+                            Capsule().stroke(
+                                vm.isWebSearchEnabled ? Color.clear : Color.white.opacity(0.15),
+                                lineWidth: 1
+                            )
+                        )
+                    }
+                    .disabled(vm.isGenerating)
+                    .animation(.easeInOut(duration: 0.15), value: vm.isWebSearchEnabled)
+
+                    Spacer()
+
+                    // ─── mic ─────────────────────────────────────────────────
                     Button {
                         if micTranscriber.isRecording {
                             Task {
@@ -1822,23 +2326,35 @@ struct ChatScreen: View {
                         }
                     } label: {
                         ZStack {
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                                .frame(width: 34, height: 34)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                                )
                             if micTranscriber.isRecording {
                                 Circle()
-                                    .fill(Color.red.opacity(0.2))
-                                    .frame(width: 36, height: 36)
+                                    .fill(Color.red.opacity(0.25))
+                                    .frame(width: 34, height: 34)
                             }
-                            Image(systemName: micTranscriber.isPreparing ? "ellipsis" : (micTranscriber.isRecording ? "stop.fill" : "mic.fill"))
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(micTranscriber.isRecording ? .red : .white.opacity(0.8))
+                            Image(systemName: micTranscriber.isPreparing ? "ellipsis"
+                                             : micTranscriber.isRecording ? "stop.fill" : "mic.fill")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(micTranscriber.isRecording ? .red : .white)
                         }
                     }
                     .disabled(vm.isGenerating)
 
-                    // ─── send / stop button ──────────────────────────────────
+                    // ─── send / stop ──────────────────────────────────────────
                     Button {
                         isComposerFocused = false
                         if vm.isGenerating {
                             vm.stopGeneration()
+                        } else if vm.isWebSearchEnabled {
+                            if vm.sendMessageWithWebSearch(documentURL: attachedDocumentURL, documentName: attachedDocumentName) {
+                                clearAttachments()
+                            }
                         } else {
                             if vm.sendMessage(imageURL: attachedImageURL, audioURL: attachedAudioURL, documentURL: attachedDocumentURL, documentName: attachedDocumentName) {
                                 clearAttachments()
@@ -1846,13 +2362,12 @@ struct ChatScreen: View {
                         }
                     } label: {
                         Image(systemName: vm.isGenerating ? "stop.fill" : "arrow.up")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.system(size: 15, weight: .bold))
                             .foregroundColor(vm.isGenerating ? .white : .black)
                             .frame(width: 32, height: 32)
                             .background(vm.isGenerating ? Color.red.opacity(0.8) : Color.white)
                             .clipShape(Circle())
                     }
-                    .padding(.trailing, 8)
                     .disabled(
                         !vm.isGenerating
                             && vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1861,9 +2376,15 @@ struct ChatScreen: View {
                             && attachedDocumentURL == nil
                     )
                 }
-                .background(Color.white.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 24))
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
             }
+            .background(Color.white.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .animation(.easeOut(duration: 0.2), value: isComposerFocused)

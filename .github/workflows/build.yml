@@ -32,6 +32,21 @@ jobs:
         working-directory: android
         run: chmod +x gradlew
 
+      # YAHAN HUMNE WOH PURANA FIX WAPAS ADD KIYA HAI 👇
+      - name: Fix Merge Conflict Automatically
+        working-directory: ./android/app
+        run: |
+          cat <<EOF >> build.gradle.kts
+          
+          android {
+              packaging {
+                  jniLibs {
+                      pickFirsts.add("**/libonnxruntime.so")
+                  }
+              }
+          }
+          EOF
+
       - name: Build APK (arm64 only)
         working-directory: android
         run: ./gradlew assembleDebug -Pandroid.injected.abis=arm64-v8a

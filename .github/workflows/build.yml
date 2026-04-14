@@ -28,14 +28,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
 
       - name: Make Gradle wrapper executable
+        working-directory: ./android
         run: chmod +x ./gradlew
 
       - name: Build Release APK
-        # assembleRelease command unsigned APK generate karegi agar signing config set nahi hai
+        working-directory: ./android
         run: ./gradlew assembleRelease
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: LLM-Hub-Release-Unsigned
-          path: app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/release/*.apk

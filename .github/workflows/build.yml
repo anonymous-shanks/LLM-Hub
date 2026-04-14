@@ -1,4 +1,4 @@
-name: Build LLM Hub (All Architectures)
+name: Build LLM Hub Stable (arm64-v8a)
 
 on:
   push:
@@ -32,9 +32,13 @@ jobs:
         working-directory: android
         run: chmod +x gradlew
 
-      - name: Enable APK Splits & Fix Conflicts
+      - name: Force arm64-v8a Release & Fix Conflicts
         working-directory: ./android/app
         run: |
+          # Purane abiFilters ko delete karo taaki conflict na ho
+          sed -i '/abiFilters/d' build.gradle.kts
+          
+          # Sirf arm64-v8a ka single chota APK banane ki setting
           cat <<EOF >> build.gradle.kts
           
           android {
@@ -42,9 +46,7 @@ jobs:
                   abi {
                       isEnable = true
                       reset()
-                      // Sirf in 4 architectures ke alag-alag APKs banenge
-                      include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
-                      // Universal (bada wala) APK generate nahi hoga
+                      include("arm64-v8a")
                       isUniversalApk = false
                   }
               }
@@ -56,35 +58,14 @@ jobs:
           }
           EOF
 
-      - name: Build All APK Splits
+      - name: Build Stable Release APK
         working-directory: android
-        # Yahan se humne specific ABI wala flag hata diya hai taaki sabhi splits build hon
-        run: ./gradlew assembleDebug
+        # assembleRelease se app shrink aur optimize hoga
+        run: ./gradlew assembleRelease
 
-      - name: Upload arm64-v8a (Narzo 70 Pro & modern devices)
+      - name: Upload Stable arm64-v8a APK
         uses: actions/upload-artifact@v4
         with:
-          name: LLM-Hub-arm64-v8a
-          path: android/app/build/outputs/apk/debug/*arm64-v8a*.apk
-          retention-days: 30
-
-      - name: Upload armeabi-v7a (Older Androids)
-        uses: actions/upload-artifact@v4
-        with:
-          name: LLM-Hub-armeabi-v7a
-          path: android/app/build/outputs/apk/debug/*armeabi-v7a*.apk
-          retention-days: 30
-
-      - name: Upload x86_64 (Emulators/PCs)
-        uses: actions/upload-artifact@v4
-        with:
-          name: LLM-Hub-x86_64
-          path: android/app/build/outputs/apk/debug/*x86_64*.apk
-          retention-days: 30
-          
-      - name: Upload x86 (Older Emulators)
-        uses: actions/upload-artifact@v4
-        with:
-          name: LLM-Hub-x86
-          path: android/app/build/outputs/apk/debug/*x86_*.apk
+          name: LLM-Hub-Stable-arm64-v8a
+          path: android/app/build/outputs/apk/release/*.apk
           retention-days: 30

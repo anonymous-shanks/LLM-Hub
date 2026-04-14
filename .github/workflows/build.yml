@@ -1,14 +1,3 @@
-name: Build LLM-Hub Release APK
-
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
-    paths-ignore:
-      - '**.md'
-
 jobs:
   build:
     name: Build Release APK
@@ -30,6 +19,14 @@ jobs:
       - name: Make Gradle wrapper executable
         working-directory: ./android
         run: chmod +x ./gradlew
+
+      # YAHAN HUMNE NAYA STEP ADD KIYA HAI 👇
+      - name: Fix Merge Conflict Automatically
+        working-directory: ./android/app
+        # Ye command apne aap file ke end mein zaroori code add kar degi
+        run: |
+          echo "" >> build.gradle.kts
+          echo "android { packaging { jniLibs { pickFirsts.add(\"**/libonnxruntime.so\") } } }" >> build.gradle.kts
 
       - name: Build Release APK
         working-directory: ./android

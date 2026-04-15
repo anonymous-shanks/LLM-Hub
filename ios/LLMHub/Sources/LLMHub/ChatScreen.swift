@@ -1196,8 +1196,19 @@ class ChatViewModel: ObservableObject {
                     return
                 }
 
+                // Build a multi-turn prompt so the model sees the full conversation history.
+                // Images/audio attachments skip multi-turn formatting (handled by the VLM path).
+                let multiTurnPrompt: String
+                if effectiveImageURL != nil || effectiveAudioURL != nil {
+                    multiTurnPrompt = capturedPrompt
+                } else {
+                    multiTurnPrompt = await MainActor.run {
+                        self.buildMultiTurnPrompt(currentUserPrompt: capturedPrompt, ragPrefix: ragContextPrefix.isEmpty ? nil : ragContextPrefix)
+                    }
+                }
+
                 try await llmBackend.generate(
-                    prompt: capturedPrompt,
+                    prompt: multiTurnPrompt,
                     imageURL: effectiveImageURL,
                     audioURL: effectiveAudioURL,
                     systemPrompt: ragContextPrefix.isEmpty ? nil : ragContextPrefix
@@ -1460,6 +1471,79 @@ class ChatViewModel: ObservableObject {
 
     private func existingFileURL(atPath path: String?) -> URL? {
         resolveStoredAttachmentURL(path)
+    }
+
+    // MARK: - Multi-turn prompt builder
+
+    /// Formats the full conversation history into the model's native chat template so
+    /// the LLM has memory of all prior turns, not just the current message.
+    @MainActor
+    func buildMultiTurnPrompt(currentUserPrompt: String, ragPrefix: String? = nil) -> String {
+        let modelName  = selectedModelName.lowercased()
+        let isGemma    = modelName.contains("gemma")
+        let isDeepSeek = modelName.contains("deepseek") || modelName.contains("r1")
+        let isLlama    = modelName.contains("llama") || modelName.contains("mistral") || modelName.contains("qwen")
+
+        // Completed turns = everything except the last 2 entries
+        // (the new user message + the empty AI placeholder just appended before calling generate).
+        let history: [ChatMessage] = messages.count >= 2 ? Array(messages.dropLast(2)) : []
+
+        guard !history.isEmpty else {
+            // No prior turns — just send the bare prompt (chat template applied by the backend).
+            return currentUserPrompt
+        }
+
+        var parts: [String] = []
+
+        // Optionally inject RAG context as a system turn.
+        if let rag = ragPrefix, !rag.isEmpty {
+            if isGemma {
+                parts.append("<start_of_turn>user\n\(rag)<end_of_turn>\n<start_of_turn>model\nUnderstood.<end_of_turn>")
+            } else {
+                parts.append(rag)
+            }
+        }
+
+        for msg in history {
+            let content = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !content.isEmpty else { continue }
+            let role = msg.isFromUser ? "user" : "assistant"
+
+            if isGemma {
+                let gemmaRole = msg.isFromUser ? "user" : "model"
+                parts.append("<start_of_turn>\(gemmaRole)\n\(content)<end_of_turn>")
+            } else if isDeepSeek {
+                let tag = msg.isFromUser ? "<|User|>" : "<|Assistant|>"
+                parts.append("\(tag)\n\(content)")
+            } else if isLlama {
+                let tag = msg.isFromUser ? "[INST]" : "[/INST]"
+                if msg.isFromUser {
+                    parts.append("\(tag) \(content) [/INST]")
+                } else {
+                    parts.append(content)
+                }
+            } else {
+                // Generic: role-prefixed plain text that most instruction models understand.
+                let prefix = role == "user" ? "User" : "Assistant"
+                parts.append("\(prefix): \(content)")
+            }
+        }
+
+        // Append the new user turn (open-ended so the model fills in the response).
+        if isGemma {
+            parts.append("<start_of_turn>user\n\(currentUserPrompt)<end_of_turn>")
+            parts.append("<start_of_turn>model")
+        } else if isDeepSeek {
+            parts.append("<|User|>\n\(currentUserPrompt)")
+            parts.append("<|Assistant|>")
+        } else if isLlama {
+            parts.append("[INST] \(currentUserPrompt) [/INST]")
+        } else {
+            parts.append("User: \(currentUserPrompt)")
+            parts.append("Assistant:")
+        }
+
+        return parts.joined(separator: "\n")
     }
 }
 

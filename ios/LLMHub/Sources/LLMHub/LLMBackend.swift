@@ -233,7 +233,7 @@ class LLMBackend: ObservableObject {
             return preferred.path
         }
 
-        if let first = files.first {
+        if let first = files.first(where: { !$0.lastPathComponent.lowercased().contains("mmproj") }) ?? files.first {
             return first.path
         }
 
@@ -563,7 +563,7 @@ class LLMBackend: ObservableObject {
             // auto-detecting a larger value (e.g. 4096) which causes OOM on <8 GB devices.
             if model.source == "Custom",
                let folderURL = runAnywhereModelDirectory(for: model),
-               let ggufFile = listGGUFFiles(in: folderURL).first {
+               let ggufFile = listGGUFFiles(in: folderURL).first(where: { !$0.lastPathComponent.lowercased().contains("mmproj") }) {
                 let ggufURL = ggufFile
                 let registeredModelInfo = ModelInfo(
                     id: runAnywhereModelId,
@@ -593,7 +593,7 @@ class LLMBackend: ObservableObject {
             } else if let folderURL = try? SimplifiedFileManager.shared.getModelFolderURL(
                 modelId: runAnywhereModelId,
                 framework: framework(for: model)
-            ), let ggufFile = listGGUFFiles(in: folderURL).first {
+            ), let ggufFile = listGGUFFiles(in: folderURL).first(where: { !$0.lastPathComponent.lowercased().contains("mmproj") }) {
                 let registeredModelInfo = ModelInfo(
                     id: runAnywhereModelId,
                     name: model.name,
@@ -621,15 +621,19 @@ class LLMBackend: ObservableObject {
                 try? await CppBridge.ModelRegistry.shared.save(pathModelInfo)
             }
 
-            try await RunAnywhere.loadModel(runAnywhereModelId)
+            if model.supportsVision && isVisionProjectorAvailable(for: model) && enableVision {
+                try await ensureVLMLoaded(for: model)
+            } else {
+                try await RunAnywhere.loadModel(runAnywhereModelId)
+                loadedLLMModelId = runAnywhereModelId
+                loadedVLMModelId = nil
+                loadedVLMProjectorPath = nil
+            }
         }
 
         isLoaded = true
         currentlyLoadedModel = model.name
         loadedContextWindow = effectiveContext
-        loadedLLMModelId = runAnywhereModelId
-        loadedVLMModelId = nil
-        loadedVLMProjectorPath = nil
     }
 
     func unloadModel() {

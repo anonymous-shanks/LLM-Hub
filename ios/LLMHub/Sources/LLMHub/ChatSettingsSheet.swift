@@ -13,6 +13,7 @@ struct ChatSettingsSheet: View {
     @State private var draftTopK: Double = 64
     @State private var draftTopP: Double = 0.95
     @State private var draftTemperature: Double = 1.0
+    @State private var draftSystemPrompt: String = ""
     
     var body: some View {
         NavigationView {
@@ -91,6 +92,45 @@ struct ChatSettingsSheet: View {
                                 .foregroundColor(ApolloPalette.accentStrong)
                             }
                             
+                        }
+                        .padding()
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                        )
+                        .shadow(color: .black.opacity(0.3), radius: 12, x: 0, y: 8)
+
+                        // System Prompt Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Image(systemName: "text.justify.left")
+                                    .foregroundColor(ApolloPalette.accentStrong)
+                                Text(settings.localized("model_system_prompt_label"))
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                TextEditor(text: $draftSystemPrompt)
+                                    .frame(minHeight: 100)
+                                    .padding(8)
+                                    .scrollContentBackground(.hidden)
+                                    .background(Color.white.opacity(0.06))
+                                    .cornerRadius(12)
+                                    .foregroundColor(.white)
+                                    .font(.body)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                                    )
+                                
+                                Text(settings.localized("model_system_prompt_hint"))
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.42))
+                                    .padding(.horizontal, 4)
+                            }
                         }
                         .padding()
                         .background(.ultraThinMaterial)
@@ -279,6 +319,7 @@ struct ChatSettingsSheet: View {
         draftTopK = min(max(1, vm.topK), 256)
         draftTopP = min(max(0, vm.topP), 1)
         draftTemperature = min(max(0, vm.temperature), 2)
+        draftSystemPrompt = vm.systemPrompt
     }
 
     private func applyDraftToViewModel() {
@@ -299,6 +340,7 @@ struct ChatSettingsSheet: View {
         vm.topK = clampedTopK
         vm.topP = clampedTopP
         vm.temperature = clampedTemperature
+        vm.systemPrompt = draftSystemPrompt
     }
 
     private func resetAllConfigsToDefaults() {
@@ -307,6 +349,7 @@ struct ChatSettingsSheet: View {
         draftTopK = 64
         draftTopP = 0.95
         draftTemperature = 1.0
+        draftSystemPrompt = ""
         applyDraftToViewModel()
     }
 

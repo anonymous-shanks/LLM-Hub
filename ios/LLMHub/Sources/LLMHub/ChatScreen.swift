@@ -514,6 +514,7 @@ class ChatViewModel: ObservableObject {
         var enableVision: Bool
         var enableAudio: Bool
         var enableThinking: Bool
+        var systemPrompt: String?
     }
 
     private enum PersistenceKeys {
@@ -530,6 +531,7 @@ class ChatViewModel: ObservableObject {
         static let enableVision = "chat_enable_vision"
         static let enableAudio = "chat_enable_audio"
         static let enableThinking = "chat_enable_thinking"
+        static let systemPrompt = "chat_system_prompt"
     }
 
     // MARK: - RAG/Memory
@@ -558,7 +560,8 @@ class ChatViewModel: ObservableObject {
         selectedBackend: "GPU",
         enableVision: true,
         enableAudio: true,
-        enableThinking: true
+        enableThinking: true,
+        systemPrompt: ""
     )
 
     @Published var inputText: String = ""
@@ -601,6 +604,9 @@ class ChatViewModel: ObservableObject {
         didSet { persistCurrentModelSettingsIfNeeded() }
     }
     @Published var enableThinking: Bool = ChatViewModel.defaultGenerationSettings.enableThinking {
+        didSet { persistCurrentModelSettingsIfNeeded() }
+    }
+    @Published var systemPrompt: String = ChatViewModel.defaultGenerationSettings.systemPrompt ?? "" {
         didSet { persistCurrentModelSettingsIfNeeded() }
     }
 
@@ -794,6 +800,7 @@ class ChatViewModel: ObservableObject {
         enableVision = settings.enableVision
         enableAudio = settings.enableAudio
         enableThinking = settings.enableThinking
+        systemPrompt = settings.systemPrompt ?? ""
         isApplyingPersistedSettings = false
     }
 
@@ -807,7 +814,8 @@ class ChatViewModel: ObservableObject {
             selectedBackend: selectedBackend,
             enableVision: enableVision,
             enableAudio: enableAudio,
-            enableThinking: enableThinking
+            enableThinking: enableThinking,
+            systemPrompt: systemPrompt
         )
     }
 
@@ -890,6 +898,9 @@ class ChatViewModel: ObservableObject {
         }
         if defaults.object(forKey: PersistenceKeys.enableThinking) != nil {
             settings.enableThinking = defaults.bool(forKey: PersistenceKeys.enableThinking)
+        }
+        if let sp = defaults.string(forKey: PersistenceKeys.systemPrompt) {
+            settings.systemPrompt = sp
         }
 
         return settings
@@ -1196,6 +1207,17 @@ class ChatViewModel: ObservableObject {
                     return
                 }
 
+                let finalSystemPrompt: String? = {
+                    let userSP = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if userSP.isEmpty {
+                        return ragContextPrefix.isEmpty ? nil : ragContextPrefix
+                    } else if ragContextPrefix.isEmpty {
+                        return userSP
+                    } else {
+                        return "\(userSP)\n\n\(ragContextPrefix)"
+                    }
+                }()
+
                 // Build a multi-turn prompt so the model sees the full conversation history.
                 // Images/audio attachments skip multi-turn formatting (handled by the VLM path).
                 let multiTurnPrompt: String
@@ -1203,7 +1225,7 @@ class ChatViewModel: ObservableObject {
                     multiTurnPrompt = capturedPrompt
                 } else {
                     multiTurnPrompt = await MainActor.run {
-                        self.buildMultiTurnPrompt(currentUserPrompt: capturedPrompt, ragPrefix: ragContextPrefix.isEmpty ? nil : ragContextPrefix)
+                        self.buildMultiTurnPrompt(currentUserPrompt: capturedPrompt, ragPrefix: finalSystemPrompt)
                     }
                 }
 
@@ -1211,7 +1233,7 @@ class ChatViewModel: ObservableObject {
                     prompt: multiTurnPrompt,
                     imageURL: effectiveImageURL,
                     audioURL: effectiveAudioURL,
-                    systemPrompt: ragContextPrefix.isEmpty ? nil : ragContextPrefix
+                    systemPrompt: finalSystemPrompt
                 ) { [weak self] content, tokens, tps in
                     Task { @MainActor [weak self] in
                         guard let self = self else { return }

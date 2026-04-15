@@ -1,0 +1,39 @@
+name: Sync Upstream & Auto Build
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Har 6 ghante mein check karega
+  workflow_dispatch:         # Manually bhi trigger kar sako
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream & sync
+        run: |
+          git remote add upstream https://github.com/timmyy123/LLM-Hub.git
+          git fetch upstream
+          
+          # Upstream mein koi naya commit hai?
+          LOCAL=$(git rev-parse HEAD)
+          UPSTREAM=$(git rev-parse upstream/main)
+          
+          if [ "$LOCAL" = "$UPSTREAM" ]; then
+            echo "✅ Already up to date — no build needed."
+          else
+            echo "🔄 New commits found — syncing & triggering build..."
+            git merge upstream/main --no-edit --allow-unrelated-histories
+            git push origin main
+            # Push hone se build workflow automatically trigger ho jaayega
+          fi

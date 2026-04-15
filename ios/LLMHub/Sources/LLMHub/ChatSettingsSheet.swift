@@ -216,9 +216,14 @@ struct ChatSettingsSheet: View {
             return documentsDir.appendingPathComponent("models")
         }()
 
-        var models = ModelData.models.filter { model in
+        var models = ModelData.allModels().filter { model in
             if model.isDependencyOnly { return false }
             if model.name.hasPrefix("Translate Gemma") { return false }
+            if model.category == .embedding || model.category == .imageGeneration { return false }
+
+            if model.source == "Custom" {
+                return FileManager.default.fileExists(atPath: model.url)
+            }
 
             if RunAnywhere.isModelDownloaded(model.id, framework: model.inferenceFramework) {
                 return true
@@ -244,7 +249,7 @@ struct ChatSettingsSheet: View {
     }
     
     private var currentModel: AIModel? {
-        if let model = ModelData.models.first(where: { $0.name == vm.selectedModelName }) {
+        if let model = ModelData.allModels().first(where: { $0.name == vm.selectedModelName }) {
             return model
         }
         if let appleModel = appleFoundationModelIfAvailable(), appleModel.name == vm.selectedModelName {

@@ -73,8 +73,8 @@ SHERPA_ONNX_VERSION_LINUX=1.12.23
 # =============================================================================
 # llama.cpp (LLM inference)
 # =============================================================================
-# b8672 - latest stable (Apr 2026), adds gemma4 architecture support
-LLAMACPP_VERSION=b8672
+# Updated to newer upstream commit for Gemma4 chat-template/parser fixes.
+LLAMACPP_VERSION=fae3a28070fe4026f87bd6a544aba1b2d1896566
 
 # =============================================================================
 # nlohmann/json

@@ -203,7 +203,7 @@ private struct EmbeddingModelSelectorRow: View {
     @State private var showPicker = false
 
     private var downloadedEmbeddingModels: [AIModel] {
-        ModelData.models.filter { model in
+        ModelData.allModels().filter { model in
             model.category == .embedding
                 && RunAnywhere.isModelDownloaded(model.id, framework: model.inferenceFramework)
         }
@@ -211,7 +211,7 @@ private struct EmbeddingModelSelectorRow: View {
 
     private var selectedModel: AIModel? {
         guard let id = settings.selectedEmbeddingModelId else { return nil }
-        return ModelData.models.first { $0.id == id }
+        return ModelData.allModels().first { $0.id == id }
     }
 
     var body: some View {

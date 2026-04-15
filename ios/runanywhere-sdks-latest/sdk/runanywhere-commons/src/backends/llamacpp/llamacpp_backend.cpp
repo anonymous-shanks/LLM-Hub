@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -15,6 +16,14 @@
 #define LOGE(...) RAC_LOG_ERROR("LLM.LlamaCpp", __VA_ARGS__)
 
 namespace runanywhere {
+
+static std::string load_text_file(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        return {};
+    }
+    return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+}
 
 // UTF-8 STATE MACHINE (DFA)
 
@@ -546,35 +555,49 @@ std::string LlamaCppTextGeneration::apply_chat_template(
         model_arch.clear();
     }
 
-    // Gemma prompt formats differ by generation:
-    // - Gemma 4 uses <|turn>role ... <turn|>
-    // - Gemma 1/2/3 use <start_of_turn>role ... <end_of_turn>
-    // We bypass Jinja for Gemma variants because the embedded template path has
-    // been unreliable across llama.cpp builds and can introduce a double-BOS.
+    // Gemma 1/2/3: hand-built <start_of_turn> is stable and avoids brittle Jinja on older GGUFs.
+    // Gemma 4: do NOT short-circuit here — it must use tokenizer.chat_template from the GGUF
+    // or llama.cpp's built-in "gemma" template. A manually concatenated <|turn> string often
+    // does not match how the tokenizer splits special tokens, which surfaces as <unused24/25>
+    // garbage in generation (same symptom as missing --chat-template gemma in llama-cli).
     {
-        bool is_gemma = !model_arch.empty() && model_arch.find("gemma") != std::string::npos;
-        if (is_gemma) {
-            const bool is_gemma4 = model_arch.find("gemma4") != std::string::npos;
-            LOGI("Gemma arch=%s detected — using hardcoded %s template (skip Jinja)",
-                 model_arch.c_str(), is_gemma4 ? "Gemma4 <|turn>|<turn|>" : "legacy <start_of_turn>");
+        const bool is_gemma  = !model_arch.empty() && model_arch.find("gemma") != std::string::npos;
+        const bool is_gemma4 = !model_arch.empty() && model_arch.find("gemma4") != std::string::npos;
+        if (is_gemma4) {
+            // Gemma4: use explicit official turn format (Google docs / llama.cpp gemma template).
+            // This path intentionally avoids Jinja parsing and any built-in fallback behavior.
+            std::string gemma_prompt;
+            for (const auto& msg : chat_messages) {
+                std::string role(msg.role ? msg.role : "");
+                std::string gemma_role = (role == "assistant") ? "model" : role;
+                gemma_prompt += "<|turn>" + gemma_role + "\n";
+                gemma_prompt += std::string(msg.content ? msg.content : "") + "<turn|>\n";
+            }
+            if (add_assistant_token) {
+                gemma_prompt += "<|turn>model\n";
+            }
+            LOGI("Gemma4 arch=%s detected — using strict <|turn>|<turn|> template (no fallback)",
+                 model_arch.c_str());
+            return gemma_prompt;
+        }
+        if (is_gemma && !is_gemma4) {
+            LOGI("Gemma arch=%s detected — using hardcoded legacy <start_of_turn> template (skip Jinja)",
+                 model_arch.c_str());
             std::string gemma_prompt;
             for (const auto& msg : chat_messages) {
                 std::string role(msg.role);
                 std::string gemma_role = (role == "assistant") ? "model" : role;
-                if (is_gemma4) {
-                    gemma_prompt += "<|turn>" + gemma_role + "\n";
-                    gemma_prompt += std::string(msg.content) + "<turn|>\n";
-                } else {
-                    gemma_prompt += "<start_of_turn>" + gemma_role + "\n";
-                    gemma_prompt += std::string(msg.content) + "<end_of_turn>\n";
-                }
+                gemma_prompt += "<start_of_turn>" + gemma_role + "\n";
+                gemma_prompt += std::string(msg.content) + "<end_of_turn>\n";
             }
             if (add_assistant_token) {
-                gemma_prompt += is_gemma4 ? "<|turn>model\n" : "<start_of_turn>model\n";
+                gemma_prompt += "<start_of_turn>model\n";
             }
             return gemma_prompt;
         }
     }
+
+    const bool is_gemma4 = !model_arch.empty() && model_arch.find("gemma4") != std::string::npos;
 
     // Extract chat template from model metadata. Start with a large buffer because
     // Gemma 4 and other modern models have Jinja templates that easily exceed 2048 bytes.
@@ -590,6 +613,11 @@ std::string LlamaCppTextGeneration::apply_chat_template(
                                                 model_template.data(), model_template.size());
     }
 
+    const std::string gemma4_template_path =
+        "models/templates/google-gemma-4-31B-it.jinja";
+    const std::string gemma4_interleaved_template_path =
+        "models/templates/google-gemma-4-31B-it-interleaved.jinja";
+    std::string file_template;
     const char* tmpl_to_use = nullptr;
     if (template_len > 0) {
         model_template.resize(template_len);
@@ -597,6 +625,24 @@ std::string LlamaCppTextGeneration::apply_chat_template(
         tmpl_to_use = model_template.c_str();
     } else {
         LOGI("No chat template found in model metadata (len=%d), will use arch-based fallback", template_len);
+        // Gemma 4 without embedded Jinja: auto-detect (nullptr) is often wrong and yields <unused*> spam.
+        if (!model_arch.empty() && model_arch.find("gemma4") != std::string::npos) {
+            tmpl_to_use = "gemma";
+            LOGI("Gemma4 with no tokenizer.chat_template — using built-in 'gemma' for first apply");
+        }
+    }
+
+    // Some Gemma4 GGUFs ship Jinja that minja cannot parse. Prefer upstream file template
+    // before falling back to built-in shorthand.
+    if (is_gemma4) {
+        file_template = load_text_file(gemma4_interleaved_template_path);
+        if (file_template.empty()) {
+            file_template = load_text_file(gemma4_template_path);
+        }
+        if (!file_template.empty()) {
+            tmpl_to_use = file_template.c_str();
+            LOGI("Gemma4 override: using template file, length: %zu", file_template.size());
+        }
     }
 
     std::string formatted;
@@ -620,15 +666,48 @@ std::string LlamaCppTextGeneration::apply_chat_template(
     }
 
     if (result < 0) {
+        if (is_gemma4) {
+            // Last-resort guard for Gemma4 GGUFs whose embedded Jinja cannot be parsed by
+            // minja in certain llama.cpp snapshots. Using special-token templates in this
+            // state can degenerate into <unusedXX> spam, so fall back to plain text format.
+            LOGI("Gemma4 template parse failed (result=%d), using plain-text chat fallback", result);
+            std::string fallback;
+            if (!system_prompt.empty()) {
+                fallback += "System: " + system_prompt + "\n";
+            }
+            for (const auto& msg : chat_messages) {
+                std::string role(msg.role ? msg.role : "");
+                if (role == "assistant" || role == "model") {
+                    fallback += "Assistant: ";
+                } else if (role == "system") {
+                    fallback += "System: ";
+                } else {
+                    fallback += "User: ";
+                }
+                fallback += std::string(msg.content ? msg.content : "") + "\n";
+            }
+            if (add_assistant_token) {
+                fallback += "Assistant: ";
+            }
+            return fallback;
+        }
+
         // The model's embedded Jinja template failed. Use an architecture-aware built-in
-        // template: Gemma variants need "gemma3" template; others fall back to nullptr
+        // template: Gemma 4 needs llama.cpp's "gemma" builtin (not "gemma3") or output degrades
+        // to <unused*> control-token spam. Older Gemma use "gemma3". Others fall back to nullptr
         // (chatml). Passing nullptr produces <|im_start|> tokens which Gemma ignores.
         const char* fallback_tmpl = nullptr;
         if (!model_arch.empty() &&
             (model_arch.find("gemma") != std::string::npos)) {
-            fallback_tmpl = "gemma3";
-            LOGI("Model template failed (result=%d), using 'gemma3' built-in template for arch=%s",
-                 result, model_arch.c_str());
+            if (model_arch.find("gemma4") != std::string::npos) {
+                fallback_tmpl = "gemma";
+                LOGI("Model template failed (result=%d), using 'gemma' built-in template for arch=%s",
+                     result, model_arch.c_str());
+            } else {
+                fallback_tmpl = "gemma3";
+                LOGI("Model template failed (result=%d), using 'gemma3' built-in template for arch=%s",
+                     result, model_arch.c_str());
+            }
         } else {
             LOGI("Model template failed (result=%d), retrying with llama.cpp auto-detect template (arch=%s)",
                  result, model_arch.c_str());
@@ -640,10 +719,24 @@ std::string LlamaCppTextGeneration::apply_chat_template(
             result = -1;
         }
         if (result < 0) {
-            // For Gemma architectures (gemma3, gemma4, etc.) we hardcode the known
-            // <start_of_turn> format since neither the model's Jinja template nor the
-            // "gemma3" built-in reliably work for newer Gemma variants.
+            // Last-resort string templates when llama_chat_apply_template cannot run.
+            const bool is_gemma4 = !model_arch.empty() && model_arch.find("gemma4") != std::string::npos;
             bool is_gemma = !model_arch.empty() && model_arch.find("gemma") != std::string::npos;
+            if (is_gemma4) {
+                LOGI("All templates failed for Gemma4 arch=%s, building <|turn> prompt directly",
+                     model_arch.c_str());
+                std::string gemma_prompt;
+                for (const auto& msg : chat_messages) {
+                    std::string role(msg.role);
+                    std::string gemma_role = (role == "assistant") ? "model" : role;
+                    gemma_prompt += "<|turn>" + gemma_role + "\n";
+                    gemma_prompt += std::string(msg.content) + "<turn|>\n";
+                }
+                if (add_assistant_token) {
+                    gemma_prompt += "<|turn>model\n";
+                }
+                return gemma_prompt;
+            }
             if (is_gemma) {
                 LOGI("All templates failed for Gemma arch=%s, building <start_of_turn> prompt directly",
                      model_arch.c_str());

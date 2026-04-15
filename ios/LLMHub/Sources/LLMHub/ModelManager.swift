@@ -34,7 +34,7 @@ public class ModelManager: ObservableObject {
     }
     
     public func refreshStatuses() {
-        for model in ModelData.models {
+        for model in ModelData.allModels() {
             let modelDir = modelsDirectory.appendingPathComponent(model.id)
             if FileManager.default.fileExists(atPath: modelDir.path) {
                 // Simple check: if a known model artifact exists, assume downloaded.

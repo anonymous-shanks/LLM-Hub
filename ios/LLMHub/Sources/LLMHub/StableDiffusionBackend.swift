@@ -114,7 +114,7 @@ final class StableDiffusionBackend: ObservableObject {
 
 #if canImport(UIKit)
     private static func preparedStartingImage(_ image: UIImage, modelId: String?) -> CGImage? {
-        let model = modelId.flatMap { id in ModelData.models.first(where: { $0.id == id }) }
+        let model = modelId.flatMap { id in ModelData.allModels().first(where: { $0.id == id }) }
         let sideLength = CGFloat(model?.imageGenerationResolution ?? 512)
         let canvasSize = CGSize(width: sideLength, height: sideLength)
 
@@ -205,7 +205,7 @@ final class StableDiffusionBackend: ObservableObject {
 
     private func ensurePipelineConfiguration(for inputImage: UIImage?) async throws {
         guard let loadedModelId,
-              let model = ModelData.models.first(where: { $0.id == loadedModelId })
+              let model = ModelData.allModels().first(where: { $0.id == loadedModelId })
         else { return }
 
         let needsEncoderSafeComputeUnits = inputImage != nil && model.id.contains("split-einsum")

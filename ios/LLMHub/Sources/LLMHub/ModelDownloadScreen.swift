@@ -1,5 +1,6 @@
 import SwiftUI
 import RunAnywhere
+import UniformTypeIdentifiers
 
 struct ModelFamilyGroup: Identifiable {
     let title: String
@@ -84,6 +85,54 @@ class ModelDownloadViewModel: ObservableObject {
         return (allExist, totalLocalBytes)
     }
 
+    // MARK: - Imported models persistence
+    private let importedModelsKey = "imported_models_ios"
+
+    static var importedModelsDirectory: URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("ImportedModels", isDirectory: true)
+    }
+
+    static func customModelDirectory(for modelId: String) -> URL {
+        (try? SimplifiedFileManager.shared.getModelFolderURL(modelId: modelId, framework: .llamaCpp))
+            ?? FileManager.default.temporaryDirectory.appendingPathComponent(modelId, isDirectory: true)
+    }
+
+    private static func migrateCustomModelIntoRunAnywhere(_ model: AIModel) -> AIModel {
+        guard model.source == "Custom" else { return model }
+
+        let destinationDir = customModelDirectory(for: model.id)
+        try? FileManager.default.createDirectory(at: destinationDir, withIntermediateDirectories: true)
+
+        let destinationModelURL = destinationDir.appendingPathComponent(URL(fileURLWithPath: model.url).lastPathComponent)
+        if model.url != destinationModelURL.path,
+           FileManager.default.fileExists(atPath: model.url),
+           !FileManager.default.fileExists(atPath: destinationModelURL.path) {
+            try? FileManager.default.copyItem(at: URL(fileURLWithPath: model.url), to: destinationModelURL)
+        }
+
+        let migratedAdditional = model.additionalFiles.map { path -> String in
+            let sourceURL = URL(fileURLWithPath: path)
+            let destinationURL = destinationDir.appendingPathComponent(sourceURL.lastPathComponent)
+            if path != destinationURL.path,
+               FileManager.default.fileExists(atPath: path),
+               !FileManager.default.fileExists(atPath: destinationURL.path) {
+                try? FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+            }
+            return destinationURL.path
+        }
+
+        return AIModel(
+            id: model.id, name: model.name, description: model.description,
+            url: destinationModelURL.path, category: model.category, sizeBytes: model.sizeBytes,
+            source: model.source, supportsVision: model.supportsVision,
+            supportsAudio: model.supportsAudio, supportsThinking: model.supportsThinking,
+            supportsGpu: model.supportsGpu, requirements: model.requirements,
+            contextWindowSize: model.contextWindowSize, modelFormat: model.modelFormat,
+            additionalFiles: migratedAdditional
+        )
+    }
+
     init() {
         do {
             try RunAnywhere.initialize(environment: .development)
@@ -95,12 +144,111 @@ class ModelDownloadViewModel: ObservableObject {
             _ = await RunAnywhere.discoverDownloadedModels()
         }
 
-        // Initialize with default states
+        // Initialize with default states for built-in models
         for model in ModelData.models {
             downloadStates[model.id] = .notDownloaded
         }
+
+        // Load custom imported models and mark them as downloaded
+        loadImportedModels()
+
         refreshStatuses()
         resumePendingDownloads()
+    }
+
+    // MARK: - Import External Model
+
+    /// Adds an externally imported GGUF model (source == "Custom") to the model list.
+    /// Returns false if a model with the same name already exists.
+    @discardableResult
+    func addExternalModel(_ model: AIModel) -> Bool {
+        guard !models.contains(where: { $0.name == model.name }) else { return false }
+        models.append(model)
+        downloadStates[model.id] = .downloaded
+        saveImportedModels()
+        return true
+    }
+
+    /// Imports a vision projector file for an already-added custom model.
+    /// Copies the projector to the model's directory and updates additionalFiles.
+    func importVisionProjector(for modelId: String, fileName: String, from sourceURL: URL) {
+        guard let idx = models.firstIndex(where: { $0.id == modelId }) else { return }
+        let model = models[idx]
+
+        let destDir = Self.customModelDirectory(for: model.id)
+        try? FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+
+        let destFile = destDir.appendingPathComponent(fileName)
+        try? FileManager.default.removeItem(at: destFile)
+        try? FileManager.default.copyItem(at: sourceURL, to: destFile)
+
+        // Rebuild the model with updated additionalFiles
+        var files = model.additionalFiles
+        if !files.contains(destFile.path) { files.append(destFile.path) }
+        let updated = AIModel(
+            id: model.id, name: model.name, description: model.description,
+            url: model.url, category: model.category, sizeBytes: model.sizeBytes,
+            source: model.source, supportsVision: model.supportsVision,
+            supportsAudio: model.supportsAudio, supportsThinking: model.supportsThinking,
+            supportsGpu: model.supportsGpu, requirements: model.requirements,
+            contextWindowSize: model.contextWindowSize, modelFormat: model.modelFormat,
+            additionalFiles: files
+        )
+        models[idx] = updated
+        saveImportedModels()
+    }
+
+    private func loadImportedModels() {
+        guard let data = UserDefaults.standard.data(forKey: importedModelsKey),
+              let imported = try? JSONDecoder().decode([AIModel].self, from: data)
+        else { return }
+
+        var needsResave = false
+        for raw in imported {
+            guard !models.contains(where: { $0.id == raw.id }) else { continue }
+            let model = Self.migrateCustomModelIntoRunAnywhere(Self.rerootCustomPaths(raw))
+            if model.url != raw.url || model.additionalFiles != raw.additionalFiles { needsResave = true }
+            models.append(model)
+            downloadStates[model.id] = .downloaded
+        }
+        if needsResave { saveImportedModels() }
+    }
+
+    /// Re-root absolute paths after iOS container relocation.
+    private static func rerootCustomPaths(_ model: AIModel) -> AIModel {
+        guard model.source == "Custom" else { return model }
+        let fixedURL = rerootPath(model.url)
+        let fixedAdditional = model.additionalFiles.map { rerootPath($0) }
+        guard fixedURL != model.url || fixedAdditional != model.additionalFiles else { return model }
+        return AIModel(
+            id: model.id, name: model.name, description: model.description,
+            url: fixedURL, category: model.category, sizeBytes: model.sizeBytes,
+            source: model.source, supportsVision: model.supportsVision,
+            supportsAudio: model.supportsAudio, supportsThinking: model.supportsThinking,
+            supportsGpu: model.supportsGpu, requirements: model.requirements,
+            contextWindowSize: model.contextWindowSize, modelFormat: model.modelFormat,
+            additionalFiles: fixedAdditional
+        )
+    }
+
+    private static func rerootPath(_ storedPath: String) -> String {
+        guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return storedPath }
+        if let marker = storedPath.range(of: "/Documents/ImportedModels/") {
+            let relativeSuffix = String(storedPath[marker.upperBound...])
+            return docsDir.appendingPathComponent("ImportedModels").appendingPathComponent(relativeSuffix).path
+        }
+        if let marker = storedPath.range(of: "/Documents/RunAnywhere/") {
+            let relativeSuffix = String(storedPath[marker.upperBound...])
+            return docsDir.appendingPathComponent("RunAnywhere").appendingPathComponent(relativeSuffix).path
+        }
+        return storedPath
+    }
+
+    private func saveImportedModels() {
+        let imported = models.filter { $0.source == "Custom" }
+        if let data = try? JSONEncoder().encode(imported) {
+            UserDefaults.standard.set(data, forKey: importedModelsKey)
+        }
     }
 
     private func loadPendingDownloadIDs() -> Set<String> {
@@ -126,6 +274,9 @@ class ModelDownloadViewModel: ObservableObject {
 
     func refreshStatuses() {
         for model in models {
+            // Custom imported models manage their own state via loadImportedModels/addExternalModel
+            if model.source == "Custom" { continue }
+
             var allExist = false
             var totalLocalBytes: Int64 = 0
 
@@ -344,14 +495,21 @@ class ModelDownloadViewModel: ObservableObject {
         downloadTasks[id]?.cancel()
         downloadTasks.removeValue(forKey: id)
         clearPending(id)
-        
+
         let model = models.first(where: { $0.id == id })
         if let model = model {
-            if let destinationDir = try? destinationDirectory(for: model) {
-                try? FileManager.default.removeItem(at: destinationDir)
-            }
-            if let legacyDir = legacyModelDirectory(for: model) {
-                try? FileManager.default.removeItem(at: legacyDir)
+            if model.source == "Custom" {
+                let dir = Self.customModelDirectory(for: model.id)
+                try? FileManager.default.removeItem(at: dir)
+                models.removeAll { $0.id == id }
+                saveImportedModels()
+            } else {
+                if let destinationDir = try? destinationDirectory(for: model) {
+                    try? FileManager.default.removeItem(at: destinationDir)
+                }
+                if let legacyDir = legacyModelDirectory(for: model) {
+                    try? FileManager.default.removeItem(at: legacyDir)
+                }
             }
             downloadStates[id] = .notDownloaded
         }
@@ -598,6 +756,7 @@ struct ModelDownloadScreen: View {
     @EnvironmentObject var settings: AppSettings
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var vm = ModelDownloadViewModel()
+    @State private var showImportSheet = false
     var onNavigateBack: () -> Void
 
     var body: some View {
@@ -717,6 +876,19 @@ struct ModelDownloadScreen: View {
                         .font(.headline)
                 }
             }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showImportSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .accessibilityLabel(settings.localized("import_external_model"))
+            }
+        }
+        .sheet(isPresented: $showImportSheet) {
+            ImportExternalModelSheet(vm: vm)
+                .environmentObject(settings)
         }
         .onAppear {
             Task {
@@ -776,5 +948,289 @@ struct CategoryTab: View {
             )
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Import External Model Sheet
+
+struct ImportExternalModelSheet: View {
+    @EnvironmentObject var settings: AppSettings
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var vm: ModelDownloadViewModel
+
+    @State private var modelName = ""
+    @State private var selectedFileName = ""
+    @State private var selectedFileURL: URL? = nil
+    @State private var supportsVision = false
+    @State private var projectorFileName = ""
+    @State private var projectorFileURL: URL? = nil
+    @State private var contextWindowSize = "4096"
+    @State private var showFilePicker = false
+    @State private var showProjectorPicker = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @State private var isImporting = false
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                ApolloLiquidBackground()
+
+                ScrollView {
+                    VStack(spacing: 14) {
+
+                        // Model name
+                        importField(label: settings.localized("model_name")) {
+                            TextField(settings.localized("model_name"), text: $modelName)
+                                .foregroundColor(.white)
+                        }
+
+                        // GGUF file picker
+                        importField(label: "GGUF File") {
+                            Button { showFilePicker = true } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "doc.badge.plus")
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.7))
+                                    Text(selectedFileName.isEmpty ? settings.localized("select_model_file") : selectedFileName)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                        .foregroundColor(selectedFileName.isEmpty ? .white.opacity(0.5) : .white)
+                                    Spacer()
+                                    if !selectedFileName.isEmpty {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundColor(.white.opacity(0.7))
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [UTType.data], allowsMultipleSelection: false) { result in
+                            handleFileSelected(result: result)
+                        }
+
+                        // Context window size
+                        importField(label: settings.localized("context_window_size")) {
+                            TextField("4096", text: $contextWindowSize)
+                                .keyboardType(.numberPad)
+                                .foregroundColor(.white)
+                        }
+
+                        // Vision toggle
+                        glassRow {
+                            Text(settings.localized("supports_vision"))
+                                .font(.subheadline)
+                                .foregroundColor(.white)
+                            Spacer()
+                            Toggle("", isOn: $supportsVision)
+                                .labelsHidden()
+                                .tint(ApolloPalette.accentStrong)
+                        }
+
+                        // Vision projector picker
+                        if supportsVision {
+                            importField(label: "Vision Projector") {
+                                Button { showProjectorPicker = true } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: "camera.badge.plus")
+                                            .font(.system(size: 15, weight: .medium))
+                                            .foregroundColor(.white.opacity(0.7))
+                                        Text(projectorFileName.isEmpty ? (settings.localized("select") + " Vision Projector") : projectorFileName)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                            .foregroundColor(projectorFileName.isEmpty ? .white.opacity(0.5) : .white)
+                                        Spacer()
+                                        if !projectorFileName.isEmpty {
+                                            Image(systemName: "checkmark")
+                                                .font(.system(size: 12, weight: .semibold))
+                                                .foregroundColor(.white.opacity(0.7))
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .fileImporter(isPresented: $showProjectorPicker, allowedContentTypes: [UTType.data], allowsMultipleSelection: false) { result in
+                                handleProjectorSelected(result: result)
+                            }
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+
+                        // Error message
+                        if showError {
+                            Text(errorMessage)
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.8))
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(.ultraThinMaterial)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.12), lineWidth: 1))
+                        }
+
+                        Spacer(minLength: 20)
+                    }
+                    .padding(20)
+                    .animation(.spring(response: 0.3), value: supportsVision)
+                }
+            }
+            .navigationTitle(settings.localized("import_external_model"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(settings.localized("cancel")) { dismiss() }
+                        .foregroundColor(.white)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if isImporting {
+                        ProgressView().tint(.white)
+                    } else {
+                        Button(settings.localized("import_model")) { performImport() }
+                            .bold()
+                            .foregroundColor(canImport ? .white : .white.opacity(0.35))
+                            .disabled(!canImport)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func importField<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.caption.bold())
+                .foregroundColor(.white.opacity(0.55))
+            glassRow { content() }
+        }
+    }
+
+    @ViewBuilder
+    private func glassRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        HStack { content() }
+            .padding(12)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.1), lineWidth: 1))
+    }
+
+    private var canImport: Bool {
+        !modelName.trimmingCharacters(in: .whitespaces).isEmpty && selectedFileURL != nil
+    }
+
+    private func handleFileSelected(result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            let ext = url.pathExtension.lowercased()
+            guard ext == "gguf" else {
+                showError = true
+                errorMessage = settings.localized("unsupported_file_format")
+                return
+            }
+            selectedFileURL = url
+            let name = url.lastPathComponent
+            selectedFileName = name.count > 40 ? String(name.prefix(37)) + "..." : name
+            showError = false
+        case .failure:
+            break
+        }
+    }
+
+    private func handleProjectorSelected(result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            projectorFileURL = url
+            let name = url.lastPathComponent
+            projectorFileName = name.count > 40 ? String(name.prefix(37)) + "..." : name
+        case .failure:
+            break
+        }
+    }
+
+    private func performImport() {
+        let name = modelName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, let sourceURL = selectedFileURL else { return }
+
+        // Duplicate name check
+        if vm.models.contains(where: { $0.name == name }) {
+            showError = true
+            errorMessage = String(format: settings.localized("model_name_already_exists"), name)
+            return
+        }
+
+        let contextSize = Int(contextWindowSize) ?? 4096
+
+        isImporting = true
+
+        Task {
+            let modelId = name.lowercased()
+                .replacingOccurrences(of: " ", with: "_")
+                .filter { $0.isLetter || $0.isNumber || $0 == "_" }
+                + "_custom"
+
+            // Custom GGUFs must live in the SDK-managed folder so RunAnywhere.loadModel(id)
+            // resolves the same file the model registry points to.
+            let importDir = ModelDownloadViewModel.customModelDirectory(for: modelId)
+            try? FileManager.default.createDirectory(at: importDir, withIntermediateDirectories: true)
+
+            // Copy the GGUF file — security-scoped access required
+            let accessing = sourceURL.startAccessingSecurityScopedResource()
+            defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
+
+            let destFile = importDir.appendingPathComponent(sourceURL.lastPathComponent)
+            try? FileManager.default.removeItem(at: destFile)
+            do {
+                try FileManager.default.copyItem(at: sourceURL, to: destFile)
+            } catch {
+                await MainActor.run {
+                    isImporting = false
+                    showError = true
+                    errorMessage = "Failed to copy model file: \(error.localizedDescription)"
+                }
+                return
+            }
+
+            // Get file size
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: destFile.path)[.size] as? Int64) ?? 0
+
+            let model = AIModel(
+                id: modelId,
+                name: name,
+                description: "Imported GGUF model",
+                url: destFile.path,
+                category: supportsVision ? .multimodal : .text,
+                sizeBytes: fileSize,
+                source: "Custom",
+                supportsVision: supportsVision,
+                supportsAudio: false,
+                supportsThinking: false,
+                supportsGpu: true,
+                requirements: ModelRequirements(minRamGB: max(2, Int(fileSize / 1_073_741_824) + 1), recommendedRamGB: max(4, Int(fileSize / 1_073_741_824) + 2)),
+                contextWindowSize: contextSize,
+                modelFormat: .gguf,
+                additionalFiles: []
+            )
+
+            await MainActor.run {
+                let success = vm.addExternalModel(model)
+                if success {
+                    // Import vision projector if selected
+                    if supportsVision, let projURL = projectorFileURL {
+                        let pAccessing = projURL.startAccessingSecurityScopedResource()
+                        defer { if pAccessing { projURL.stopAccessingSecurityScopedResource() } }
+                        vm.importVisionProjector(for: modelId, fileName: projURL.lastPathComponent, from: projURL)
+                    }
+                    isImporting = false
+                    dismiss()
+                } else {
+                    isImporting = false
+                    showError = true
+                    errorMessage = String(format: settings.localized("model_name_already_exists"), name)
+                }
+            }
+        }
     }
 }

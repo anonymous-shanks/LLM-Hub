@@ -53,7 +53,7 @@ struct LLMHubApp: App {
     }
 
     private func registerRunAnywhereModelCatalog() {
-        for model in ModelData.models {
+        for model in ModelData.allModels() {
             register(model)
         }
     }

@@ -53,6 +53,11 @@ class LLMBackend: ObservableObject {
     }
 
     private func isModelAvailableLocally(_ model: AIModel) -> Bool {
+        // Custom imported models store their file at model.url (an absolute file path).
+        if model.source == "Custom", FileManager.default.fileExists(atPath: model.url) {
+            return true
+        }
+
         if RunAnywhere.isModelDownloaded(model.id, framework: model.inferenceFramework) {
             return true
         }
@@ -99,8 +104,41 @@ class LLMBackend: ObservableObject {
             try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
         }
 
-        print("[LLMBackend] migrated legacy model files for \(model.id)")
+        print("ℹ️ [LLMBackend] Migrated legacy model files for \(model.id)")
         return true
+    }
+
+    private func migrateCustomModelIfNeeded(_ model: AIModel) throws -> Bool {
+        guard model.source == "Custom",
+              let destinationDir = runAnywhereModelDirectory(for: model) else {
+            return false
+        }
+
+        try FileManager.default.createDirectory(at: destinationDir, withIntermediateDirectories: true)
+
+        var copiedAny = false
+        let mainSourceURL = URL(fileURLWithPath: model.url)
+        let mainDestinationURL = destinationDir.appendingPathComponent(mainSourceURL.lastPathComponent)
+        if FileManager.default.fileExists(atPath: mainSourceURL.path),
+           !FileManager.default.fileExists(atPath: mainDestinationURL.path) {
+            try FileManager.default.copyItem(at: mainSourceURL, to: mainDestinationURL)
+            copiedAny = true
+        }
+
+        for filePath in model.additionalFiles {
+            let sourceURL = URL(fileURLWithPath: filePath)
+            let destinationURL = destinationDir.appendingPathComponent(sourceURL.lastPathComponent)
+            if FileManager.default.fileExists(atPath: sourceURL.path),
+               !FileManager.default.fileExists(atPath: destinationURL.path) {
+                try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+                copiedAny = true
+            }
+        }
+
+        if copiedAny {
+            print("ℹ️ [LLMBackend] Migrated custom model files into RunAnywhere storage for \(model.id)")
+        }
+        return copiedAny
     }
 
     private func filename(from url: URL) -> String {
@@ -109,7 +147,7 @@ class LLMBackend: ObservableObject {
 
     private func loadedAIModel() -> AIModel? {
         guard let modelName = currentlyLoadedModel else { return nil }
-        if let model = ModelData.models.first(where: { $0.name == modelName }) {
+        if let model = ModelData.allModels().first(where: { $0.name == modelName }) {
             return model
         }
         if modelName == "Apple Foundation Model" {
@@ -165,6 +203,14 @@ class LLMBackend: ObservableObject {
     }
 
     private func resolveModelGGUFPath(for model: AIModel) throws -> String {
+        // Custom imported models store the GGUF path directly in model.url.
+        if model.source == "Custom" {
+            guard FileManager.default.fileExists(atPath: model.url) else {
+                throw NSError(domain: "LLMBackend", code: -101, userInfo: [NSLocalizedDescriptionKey: "Custom model file missing: \(model.url)"])
+            }
+            return model.url
+        }
+
         let folderURL = try SimplifiedFileManager.shared.getModelFolderURL(modelId: model.id, framework: model.inferenceFramework)
         let files = listGGUFFiles(in: folderURL)
 
@@ -214,13 +260,25 @@ class LLMBackend: ObservableObject {
     }
 
     private func resolveVisionProjectorPath(for model: AIModel) -> String? {
+        // Custom imported models store the vision projector path in additionalFiles.
+        if model.source == "Custom" {
+            let mmprojPath = model.additionalFiles.first {
+                let lower = $0.lowercased()
+                return lower.contains("mmproj") || lower.hasSuffix(".gguf")
+            }
+            if let path = mmprojPath, FileManager.default.fileExists(atPath: path) {
+                return path
+            }
+            return nil
+        }
+
         let stem = familyStem(from: model.name)
         let quantTag = quantizationTag(from: model.name)
 
-        let allDependencyModels = ModelData.models.filter { $0.isDependencyOnly && $0.inferenceFramework == model.inferenceFramework }
+        let allDependencyModels = ModelData.allModels().filter { $0.isDependencyOnly && $0.inferenceFramework == model.inferenceFramework }
         let candidates = allDependencyModels.filter { isModelAvailableLocally($0) }
 
-        print("[LLMBackend] resolveVisionProjectorPath model=\(model.name) stem='\(stem)' quantTag=\(quantTag ?? "nil") totalDeps=\(allDependencyModels.count) downloadedDeps=\(candidates.count) downloadedNames=\(candidates.map(\.name))")
+        print("🔍 [LLMBackend] resolveVisionProjectorPath model=\(model.name) stem='\(stem)' quantTag=\(quantTag ?? "nil") totalDeps=\(allDependencyModels.count) downloadedDeps=\(candidates.count) downloadedNames=\(candidates.map(\.name))")
 
         let scored = candidates.compactMap { candidate -> (score: Int, path: String)? in
             let candidateName = candidate.name.lowercased()
@@ -255,7 +313,7 @@ class LLMBackend: ObservableObject {
             return lhs.score > rhs.score
         }
 
-        print("[LLMBackend] resolveVisionProjectorPath scored=\(scored.map { "score=\($0.score) path=\($0.path)" })")
+        print("🔍 [LLMBackend] resolveVisionProjectorPath scored=\(scored.map { "score=\($0.score) path=\($0.path)" })")
         // Require a minimum score of 3 (stem match) to avoid cross-family projector matches.
         // A score of 1 (only mmproj keyword) is not enough — the projector must belong to the same model family.
         return scored.first(where: { $0.score >= 3 })?.path
@@ -263,7 +321,7 @@ class LLMBackend: ObservableObject {
 
     func isVisionProjectorAvailable(for model: AIModel) -> Bool {
         let path = resolveVisionProjectorPath(for: model)
-        print("[LLMBackend] isVisionProjectorAvailable model=\(model.name) result=\(path != nil) path=\(path ?? "nil")")
+        print("🔍 [LLMBackend] isVisionProjectorAvailable model=\(model.name) result=\(path != nil) path=\(path ?? "nil")")
         return path != nil
     }
 
@@ -284,7 +342,7 @@ class LLMBackend: ObservableObject {
         let modelHeader = ggufHeaderSummary(at: modelPath)
         let projectorHeader = ggufHeaderSummary(at: mmprojPath)
 
-        print("[LLMBackend] VLM prepare model=\(model.id) main={\(modelSummary)} header={\(modelHeader)} mmproj={\(projectorSummary)} header={\(projectorHeader)}")
+        print("ℹ️ [LLMBackend] VLM prepare model=\(model.id) main={\(modelSummary)} header={\(modelHeader)} mmproj={\(projectorSummary)} header={\(projectorHeader)}")
 
         guard modelHeader == "GGUF" else {
             throw NSError(
@@ -312,9 +370,9 @@ class LLMBackend: ObservableObject {
             do {
                 try await RunAnywhere.unloadModel()
                 loadedLLMModelId = nil
-                print("[LLMBackend] Unloaded text LLM before VLM load to avoid duplicate model residency")
+                print("ℹ️ [LLMBackend] Unloaded text LLM before VLM load to avoid duplicate model residency")
             } catch {
-                print("[LLMBackend] Failed to unload text LLM before VLM load: \(error)")
+                print("❌ [LLMBackend] Failed to unload text LLM before VLM load: \(error)")
             }
         }
 
@@ -338,7 +396,7 @@ class LLMBackend: ObservableObject {
             await RunAnywhere.unloadVLMModel()
             loadedVLMModelId = nil
             loadedVLMProjectorPath = nil
-            print("[LLMBackend] Unloaded VLM before text generation to avoid duplicate model residency")
+            print("ℹ️ [LLMBackend] Unloaded VLM before text generation to avoid duplicate model residency")
         }
 
         let shouldLoad = !((await RunAnywhere.isModelLoaded) && loadedLLMModelId == model.id)
@@ -420,7 +478,14 @@ class LLMBackend: ObservableObject {
     }
 
     private func registerModel(_ model: AIModel, contextLengthOverride: Int? = nil) {
-        guard let primaryURL = URL(string: model.url) else { return }
+        // Custom models store an absolute file path in model.url — use file:// URL.
+        let primaryURL: URL
+        if model.source == "Custom" {
+            primaryURL = URL(fileURLWithPath: model.url)
+        } else {
+            guard let url = URL(string: model.url) else { return }
+            primaryURL = url
+        }
         let contextLength = contextLengthOverride ?? model.contextWindowSize
 
         if model.additionalFiles.isEmpty {
@@ -458,7 +523,7 @@ class LLMBackend: ObservableObject {
         }
 
         if !areModelsRegistered {
-            for model in ModelData.models {
+            for model in ModelData.allModels() {
                 registerModel(model)
             }
             areModelsRegistered = true
@@ -472,7 +537,7 @@ class LLMBackend: ObservableObject {
         isBackendLoading = true
         defer { isBackendLoading = false }
 
-        print("[LLMBackend] loadModel name=\(model.name) visionEnabled=\(enableVision) audioEnabled=\(enableAudio)")
+        print("ℹ️ [LLMBackend] loadModel name=\(model.name) visionEnabled=\(enableVision) audioEnabled=\(enableAudio)")
 
         try await ensureSDKReady()
         let effectiveContext = clampedContextWindow(contextWindow, for: model)
@@ -484,6 +549,7 @@ class LLMBackend: ObservableObject {
         } else {
             registerModel(model, contextLengthOverride: effectiveContext)
             await RunAnywhere.flushPendingRegistrations()
+            _ = try? migrateCustomModelIfNeeded(model)
             _ = try? migrateLegacyModelIfNeeded(model)
 
             // Only local load here. Downloads are handled by the model download screen.
@@ -495,7 +561,36 @@ class LLMBackend: ObservableObject {
             // file path as the identifier. Re-register the model under its absolute path so
             // the C++ ID lookup succeeds and uses effectiveContext (e.g. 2048) instead of
             // auto-detecting a larger value (e.g. 4096) which causes OOM on <8 GB devices.
-            if let folderURL = try? SimplifiedFileManager.shared.getModelFolderURL(
+            if model.source == "Custom",
+               let folderURL = runAnywhereModelDirectory(for: model),
+               let ggufFile = listGGUFFiles(in: folderURL).first {
+                let ggufURL = ggufFile
+                let registeredModelInfo = ModelInfo(
+                    id: runAnywhereModelId,
+                    name: model.name,
+                    category: model.supportsVision ? .multimodal : .language,
+                    format: .gguf,
+                    framework: framework(for: model),
+                    downloadURL: ggufURL,
+                    localPath: folderURL,
+                    contextLength: effectiveContext,
+                    supportsThinking: model.supportsThinking
+                )
+                try? await CppBridge.ModelRegistry.shared.save(registeredModelInfo)
+
+                let pathModelInfo = ModelInfo(
+                    id: ggufURL.path,
+                    name: model.name,
+                    category: model.supportsVision ? .multimodal : .language,
+                    format: .gguf,
+                    framework: framework(for: model),
+                    downloadURL: ggufURL,
+                    localPath: folderURL,
+                    contextLength: effectiveContext,
+                    supportsThinking: model.supportsThinking
+                )
+                try? await CppBridge.ModelRegistry.shared.save(pathModelInfo)
+            } else if let folderURL = try? SimplifiedFileManager.shared.getModelFolderURL(
                 modelId: runAnywhereModelId,
                 framework: framework(for: model)
             ), let ggufFile = listGGUFFiles(in: folderURL).first {
@@ -542,7 +637,7 @@ class LLMBackend: ObservableObject {
             do {
                 try await RunAnywhere.unloadModel()
             } catch {
-                print("[LLMBackend] unloadModel error=\(error)")
+                print("❌ [LLMBackend] unloadModel error=\(error)")
             }
             await RunAnywhere.unloadVLMModel()
             await MainActor.run {
@@ -639,7 +734,7 @@ class LLMBackend: ObservableObject {
             try await ensureTextModelLoaded(for: model)
         }
 
-        print("[LLMBackend] generate visionEnabled=\(enableVision) audioEnabled=\(enableAudio) images=0 videos=0")
+        print("ℹ️ [LLMBackend] generate visionEnabled=\(enableVision) audioEnabled=\(enableAudio) images=0 videos=0")
 
         let streamResult = try await RunAnywhere.generateStream(prompt, options: options)
         var currentOutput = ""

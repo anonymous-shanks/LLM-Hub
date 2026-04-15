@@ -236,7 +236,7 @@ private func translatorHasDownloadedVisionProjector(for model: AIModel) -> Bool 
     let family = translatorVisionFamilyName(for: model.name)
     let quantTag = translatorQuantizationTag(for: model.name)
 
-    let candidates = ModelData.models.filter { candidate in
+    let candidates = ModelData.allModels().filter { candidate in
         candidate.isDependencyOnly
             && candidate.inferenceFramework == model.inferenceFramework
             && translatorVisionFamilyName(for: candidate.name) == family
@@ -265,7 +265,7 @@ private func translatorHasDownloadedVisionProjector(for model: AIModel) -> Bool 
 @MainActor
 private func hasDownloadedVisionProjector(for model: AIModel) -> Bool {
     guard model.modelFormat == .gguf, model.supportsVision else { return true }
-    return ModelData.models.contains { candidate in
+    return ModelData.allModels().contains { candidate in
         candidate.isDependencyOnly
             && candidate.inferenceFramework == model.inferenceFramework
             && RunAnywhere.isModelDownloaded(candidate.id, framework: candidate.inferenceFramework)
@@ -297,8 +297,13 @@ private func downloadableFeatureModels() -> [AIModel] {
         return allExist && (minimumExpectedBytes <= 0 || totalBytes >= minimumExpectedBytes)
     }
 
-    var models = ModelData.models.filter { model in
+    var models = ModelData.allModels().filter { model in
         if model.isDependencyOnly { return false }
+        if model.category == .embedding || model.category == .imageGeneration { return false }
+
+        if model.source == "Custom" {
+            return FileManager.default.fileExists(atPath: model.url)
+        }
 
         if let runAnywhereDir = try? SimplifiedFileManager.shared.getModelFolderURL(
             modelId: model.id,
@@ -357,7 +362,7 @@ private func appleFoundationModelIfAvailable() -> AIModel? {
 @MainActor
 private func selectedFeatureModel(named selectedModelName: String) -> AIModel? {
     downloadableFeatureModels().first(where: { $0.name == selectedModelName })
-        ?? ModelData.models.first(where: { $0.name == selectedModelName })
+        ?? ModelData.allModels().first(where: { $0.name == selectedModelName })
 }
 
 @MainActor
@@ -2364,7 +2369,7 @@ struct TranslatorScreen: View {
     @ObservedObject private var llm = LLMBackend.shared
 
     private var selectedModel: AIModel? {
-        ModelData.models.first(where: { $0.name == selectedModelName && isTranslatorSupportedModel($0) })
+        ModelData.allModels().first(where: { $0.name == selectedModelName && isTranslatorSupportedModel($0) })
     }
 
     private var isCurrentModelLoaded: Bool {
@@ -2864,7 +2869,7 @@ struct TranslatorScreen: View {
         isLoading = true
         defer { isLoading = false }
 
-        let modelContextCap = model.contextWindowSize > 0 ? model.contextWindowSize : 2048
+        let modelContextCap = model.contextWindowSize > 0 ? model.contextWindowSize : 4096
         let effectiveContext = min(max(1, Int(maxTokens)), modelContextCap)
         let shouldReload = force
             || llm.currentlyLoadedModel != model.name

@@ -2,8 +2,12 @@ name: Sync Upstream & Auto Build
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # Har 6 ghante mein check karega
-  workflow_dispatch:         # Manually bhi trigger kar sako
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write        # Yeh line zaroori hai — build trigger karne ke liye
 
 jobs:
   sync:
@@ -21,19 +25,28 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Add upstream & sync
+        id: sync
         run: |
           git remote add upstream https://github.com/timmyy123/LLM-Hub.git
           git fetch upstream
-          
-          # Upstream mein koi naya commit hai?
+
           LOCAL=$(git rev-parse HEAD)
           UPSTREAM=$(git rev-parse upstream/main)
-          
+
           if [ "$LOCAL" = "$UPSTREAM" ]; then
-            echo "✅ Already up to date — no build needed."
+            echo "✅ Already up to date."
+            echo "updated=false" >> $GITHUB_OUTPUT
           else
-            echo "🔄 New commits found — syncing & triggering build..."
+            echo "🔄 New commits found — syncing..."
             git merge upstream/main --no-edit --allow-unrelated-histories
             git push origin main
-            # Push hone se build workflow automatically trigger ho jaayega
+            echo "updated=true" >> $GITHUB_OUTPUT
           fi
+
+      # Push ke baad explicitly build trigger karo
+      - name: Trigger build workflow
+        if: steps.sync.outputs.updated == 'true'
+        run: |
+          gh workflow run "Build LLM-Hub Release APK (Free & arm64)" --ref main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

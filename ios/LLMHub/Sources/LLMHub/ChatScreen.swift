@@ -5,6 +5,7 @@ import RunAnywhere
 import Speech
 import SwiftUI
 import UniformTypeIdentifiers
+import WebKit
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
@@ -514,6 +515,7 @@ class ChatViewModel: ObservableObject {
         var enableVision: Bool
         var enableAudio: Bool
         var enableThinking: Bool
+        var systemPrompt: String?
     }
 
     private enum PersistenceKeys {
@@ -530,6 +532,7 @@ class ChatViewModel: ObservableObject {
         static let enableVision = "chat_enable_vision"
         static let enableAudio = "chat_enable_audio"
         static let enableThinking = "chat_enable_thinking"
+        static let systemPrompt = "chat_system_prompt"
     }
 
     // MARK: - RAG/Memory
@@ -558,7 +561,8 @@ class ChatViewModel: ObservableObject {
         selectedBackend: "GPU",
         enableVision: true,
         enableAudio: true,
-        enableThinking: true
+        enableThinking: true,
+        systemPrompt: ""
     )
 
     @Published var inputText: String = ""
@@ -601,6 +605,9 @@ class ChatViewModel: ObservableObject {
         didSet { persistCurrentModelSettingsIfNeeded() }
     }
     @Published var enableThinking: Bool = ChatViewModel.defaultGenerationSettings.enableThinking {
+        didSet { persistCurrentModelSettingsIfNeeded() }
+    }
+    @Published var systemPrompt: String = ChatViewModel.defaultGenerationSettings.systemPrompt ?? "" {
         didSet { persistCurrentModelSettingsIfNeeded() }
     }
 
@@ -650,7 +657,19 @@ class ChatViewModel: ObservableObject {
     var approximateContextTokensUsed: Double {
         let startIndex = max(0, min(messages.count, contextResetStartBySessionId[currentSessionId] ?? 0))
         let visibleMessages = Array(messages.dropFirst(startIndex))
-        let messageChars = visibleMessages.reduce(0) { $0 + $1.content.count }
+        // Strip thinking blocks — they are NOT re-sent as history in multi-turn prompts,
+        // so they should not count toward the context window budget.
+        // During the streaming thinking phase (no answer yet), count 0 for that message.
+        let messageChars = visibleMessages.reduce(0) { acc, msg in
+            if msg.isFromUser {
+                return acc + msg.content.count
+            }
+            if contentHasThinkingMarkers(msg.content) {
+                let answer = getDisplayContentWithoutThinking(msg.content)
+                return acc + answer.count     // 0 while still thinking
+            }
+            return acc + msg.content.count
+        }
         let composerChars = inputText.count
         // When RAG is disabled the attached doc is stuffed into system prompt — count it.
         let docChars = isRagEnabled ? 0 : pendingAttachedDocumentChars
@@ -794,6 +813,7 @@ class ChatViewModel: ObservableObject {
         enableVision = settings.enableVision
         enableAudio = settings.enableAudio
         enableThinking = settings.enableThinking
+        systemPrompt = settings.systemPrompt ?? ""
         isApplyingPersistedSettings = false
     }
 
@@ -807,7 +827,8 @@ class ChatViewModel: ObservableObject {
             selectedBackend: selectedBackend,
             enableVision: enableVision,
             enableAudio: enableAudio,
-            enableThinking: enableThinking
+            enableThinking: enableThinking,
+            systemPrompt: systemPrompt
         )
     }
 
@@ -890,6 +911,9 @@ class ChatViewModel: ObservableObject {
         }
         if defaults.object(forKey: PersistenceKeys.enableThinking) != nil {
             settings.enableThinking = defaults.bool(forKey: PersistenceKeys.enableThinking)
+        }
+        if let sp = defaults.string(forKey: PersistenceKeys.systemPrompt) {
+            settings.systemPrompt = sp
         }
 
         return settings
@@ -1196,11 +1220,33 @@ class ChatViewModel: ObservableObject {
                     return
                 }
 
+                let finalSystemPrompt: String? = {
+                    let userSP = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if userSP.isEmpty {
+                        return ragContextPrefix.isEmpty ? nil : ragContextPrefix
+                    } else if ragContextPrefix.isEmpty {
+                        return userSP
+                    } else {
+                        return "\(userSP)\n\n\(ragContextPrefix)"
+                    }
+                }()
+
+                // Build a multi-turn prompt so the model sees the full conversation history.
+                // Images/audio attachments skip multi-turn formatting (handled by the VLM path).
+                let multiTurnPrompt: String
+                if effectiveImageURL != nil || effectiveAudioURL != nil {
+                    multiTurnPrompt = capturedPrompt
+                } else {
+                    multiTurnPrompt = await MainActor.run {
+                        self.buildMultiTurnPrompt(currentUserPrompt: capturedPrompt, ragPrefix: finalSystemPrompt)
+                    }
+                }
+
                 try await llmBackend.generate(
-                    prompt: capturedPrompt,
+                    prompt: multiTurnPrompt,
                     imageURL: effectiveImageURL,
                     audioURL: effectiveAudioURL,
-                    systemPrompt: ragContextPrefix.isEmpty ? nil : ragContextPrefix
+                    systemPrompt: finalSystemPrompt
                 ) { [weak self] content, tokens, tps in
                     Task { @MainActor [weak self] in
                         guard let self = self else { return }
@@ -1237,7 +1283,14 @@ class ChatViewModel: ObservableObject {
 
         if let idx = targetIndex, !messages[idx].isFromUser {
             var msgs = self.messages
-            msgs[idx].content = normalizeStreamText(content)
+            let normalizedContent = normalizeStreamText(content)
+            let parsed = parseThinkingAndAnswer(normalizedContent)
+            if contentHasThinkingMarkers(normalizedContent) || !parsed.thinking.isEmpty {
+                print(
+                    "🧠 [ThinkingDebug][chat] isGenerating=\(isGenerating) rawChars=\(content.count) normalizedChars=\(normalizedContent.count) thinkingChars=\(parsed.thinking.count) answerChars=\(parsed.answer.count) preview=\(String(normalizedContent.prefix(120)))"
+                )
+            }
+            msgs[idx].content = normalizedContent
             msgs[idx].isGenerating = isGenerating
             self.totalTokens = tokens
             self.tokensPerSecond = tps
@@ -1307,10 +1360,13 @@ class ChatViewModel: ObservableObject {
 
             if AppSettings.shared.autoReadoutEnabled {
                 let finishedMessage = msgs[idx]
-                let content = finishedMessage.content.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !content.isEmpty {
+                let rawContent = finishedMessage.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                // Speak only the answer portion — never read out thinking tokens.
+                let ttsContent = getDisplayContentWithoutThinking(rawContent)
+                let speakText = ttsContent.isEmpty ? rawContent : ttsContent
+                if !speakText.isEmpty {
                     ttsManager.speak(
-                        content,
+                        speakText,
                         fallbackLanguage: AppSettings.shared.selectedLanguage,
                         key: finishedMessage.id.uuidString
                     )
@@ -1461,12 +1517,156 @@ class ChatViewModel: ObservableObject {
     private func existingFileURL(atPath path: String?) -> URL? {
         resolveStoredAttachmentURL(path)
     }
+
+    // MARK: - Multi-turn prompt builder
+
+    /// Formats the full conversation history into the model's native chat template.
+    /// Uses the __RAW_PROMPT__ prefix to bypass SDK auto-formatting, ensuring we have 
+    /// full control over the multi-turn sequence and context budget.
+    @MainActor
+    func buildMultiTurnPrompt(currentUserPrompt: String, ragPrefix: String? = nil) -> String {
+        let modelName = selectedModelName.lowercased()
+        let modelSupportsThinking = chatModel(named: selectedModelName)?.supportsThinking == true
+        let isGemma  = modelName.contains("gemma")
+        let isGemma4 = isGemma && (modelName.contains("gemma 4") || modelName.contains("gemma-4"))
+        let isLlama  = modelName.contains("llama") || modelName.contains("mistral")
+        let isHarmonyModel = modelName.contains("gpt-oss") || modelName.contains("gpt_oss")
+
+        // 1. Identify history (exclude placeholder turns)
+        var history: [ChatMessage] = messages.count >= 2 ? Array(messages.dropLast(2)) : []
+
+        // 2. Context Window Management (Sliding Window)
+        // Approx 4 chars per token. Limit history to ~3000 tokens (12,000 chars)
+        // to leave room for RAG context and the new response.
+        let maxHistoryChars = 12000
+        var currentChars = 0
+        var truncatedHistory: [ChatMessage] = []
+        
+        // Walk backwards through history to keep most recent turns
+        for msg in history.reversed() {
+            // For context budget, count only the answer portion (thinking is stripped)
+            let effectiveLen: Int
+            if !msg.isFromUser && contentHasThinkingMarkers(msg.content) {
+                effectiveLen = getDisplayContentWithoutThinking(msg.content).count
+            } else {
+                effectiveLen = msg.content.count
+            }
+            if currentChars + effectiveLen < maxHistoryChars {
+                truncatedHistory.insert(msg, at: 0)
+                currentChars += effectiveLen
+            } else {
+                break // Stop adding older messages
+            }
+        }
+        history = truncatedHistory
+
+        // 3. Build the Raw Prompt String
+        var parts: [String] = []
+
+        // Prepend the RAW prompt sentinel for the RunAnywhere SDK
+        // This prevents the SDK from wrapping our already-formatted string.
+        parts.append("__RAW_PROMPT__")
+
+        if isHarmonyModel {
+            var harmonyParts: [String] = []
+            let systemContent = ragPrefix?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let effectiveSystem = systemContent.isEmpty ? "You are a helpful assistant." : systemContent
+            harmonyParts.append("<|start|>system<|message|>\(effectiveSystem)<|end|>")
+
+            for msg in history {
+                let rawContent = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                let content: String
+                if msg.isFromUser {
+                    content = rawContent
+                } else {
+                    let answer = getDisplayContentWithoutThinking(rawContent)
+                    content = answer.isEmpty ? rawContent : answer
+                }
+                guard !content.isEmpty else { continue }
+
+                let role = msg.isFromUser ? "user" : "assistant"
+                harmonyParts.append("<|start|>\(role)<|message|>\(content)<|end|>")
+            }
+
+            harmonyParts.append("<|start|>user<|message|>\(currentUserPrompt)<|end|>")
+            if modelSupportsThinking && enableThinking {
+                harmonyParts.append("<|start|>assistant")
+            } else {
+                harmonyParts.append("<|start|>assistant<|channel|>analysis<|message|><|end|><|start|>assistant<|channel|>final<|message|>")
+            }
+            parts.append(contentsOf: harmonyParts)
+            return parts.joined()
+        }
+
+        // Optionally inject RAG context or System Message as an opening turn.
+        if let rag = ragPrefix, !rag.isEmpty {
+            if isGemma4 {
+                parts.append("<|turn>user\n\(rag)<turn|>\n<|turn>model\nUnderstood.<turn|>")
+            } else if isGemma {
+                parts.append("<start_of_turn>user\n\(rag)<end_of_turn>\n<start_of_turn>model\nUnderstood.<end_of_turn>")
+            } else if isLlama {
+                parts.append("[INST] \(rag) [/INST]\nUnderstood.")
+            } else {
+                parts.append("System: \(rag)")
+            }
+        }
+
+        // Add history turns
+        for msg in history {
+            // Strip thinking blocks from assistant messages — the reasoning chain should
+            // not be re-fed into the context window as "said text".
+            let rawContent = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            let content: String
+            if msg.isFromUser {
+                content = rawContent
+            } else {
+                let answer = getDisplayContentWithoutThinking(rawContent)
+                content = answer.isEmpty ? rawContent : answer
+            }
+            guard !content.isEmpty else { continue }
+
+            if isGemma4 {
+                let role = msg.isFromUser ? "user" : "model"
+                parts.append("<|turn>\(role)\n\(content)<turn|>")
+            } else if isGemma {
+                let gemmaRole = msg.isFromUser ? "user" : "model"
+                parts.append("<start_of_turn>\(gemmaRole)\n\(content)<end_of_turn>")
+            } else if isLlama {
+                if msg.isFromUser {
+                    parts.append("[INST] \(content) [/INST]")
+                } else {
+                    parts.append(content)
+                }
+            } else {
+                let prefix = msg.isFromUser ? "User" : "Assistant"
+                parts.append("\(prefix): \(content)")
+            }
+        }
+
+        // 4. Append the active new user prompt
+        if isGemma4 {
+            parts.append("<|turn>user\n\(currentUserPrompt)<turn|>")
+            parts.append("<|turn>model\n")
+        } else if isGemma {
+            parts.append("<start_of_turn>user\n\(currentUserPrompt)<end_of_turn>")
+            parts.append("<start_of_turn>model\n")
+        } else if isLlama {
+            parts.append("[INST] \(currentUserPrompt) [/INST]")
+        } else {
+            parts.append("User: \(currentUserPrompt)")
+            parts.append("Assistant:")
+        }
+
+        return parts.joined(separator: "\n")
+    }
 }
+
 
 // MARK: - Message Bubble
 struct MessageBubble: View {
     @EnvironmentObject var settings: AppSettings
     let message: ChatMessage
+    let preferThinkingWhileStreaming: Bool
     let onCopy: () -> Void
     let onOpenImage: ((String) -> Void)?
     let onEditUserMessage: ((String) -> Void)?
@@ -1616,12 +1816,17 @@ struct MessageBubble: View {
                             .foregroundColor(.white.opacity(0.68))
                         }
                     } else {
-                        RenderMessageSegments(displayContent: message.content)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 4)
-                            .onLongPressGesture {
-                                showActions = true
-                            }
+                        ThinkingAwareResultContent(
+                            content: message.content,
+                            isGenerating: message.isGenerating,
+                            preferThinkingWhileStreaming: preferThinkingWhileStreaming,
+                            useChatRenderer: true
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                        .onLongPressGesture {
+                            showActions = true
+                        }
                     }
                 }
             }
@@ -1687,10 +1892,20 @@ struct MessageBubble: View {
                        let tokenCount = message.tokenCount,
                        let tps = message.tokensPerSecond,
                        tokenCount > 0 {
-                        Spacer()
-                        Label(String(format: settings.localized("tokens_per_second_format"), tokenCount, tps), systemImage: "bolt.fill")
-                            .font(.caption2)
-                            .foregroundColor(.white.opacity(0.63))
+                        // Only show stats once thinking is done and there's an answer.
+                        // While still in the thinking phase, hide the token badge entirely
+                        // so thinking tokens never appear in the count.
+                        let hasMarkers = contentHasThinkingMarkers(message.content)
+                        let answer = hasMarkers ? getDisplayContentWithoutThinking(message.content) : message.content
+                        if !hasMarkers || !answer.isEmpty {
+                            Spacer()
+                            let thinkingChars = parseThinkingAndAnswer(message.content).thinking.count
+                            let thinkingTokenEst = max(0, thinkingChars / 4)
+                            let answerTokenCount = max(1, tokenCount - thinkingTokenEst)
+                            Label(String(format: settings.localized("tokens_per_second_format"), answerTokenCount, tps), systemImage: "bolt.fill")
+                                .font(.caption2)
+                                .foregroundColor(.white.opacity(0.63))
+                        }
                     }
                 }
             }
@@ -1753,12 +1968,14 @@ struct TypingIndicator: View {
     }
 }
 
-private enum ParsedSegment {
+private enum ParsedSegment: Hashable {
     case text(String)
     case code(language: String?, content: String)
+    case math(content: String, isBlock: Bool)
+    case table(String)
 }
 
-private struct RenderMessageSegments: View {
+struct RenderMessageSegments: View {
     let displayContent: String
 
     var body: some View {
@@ -1770,22 +1987,56 @@ private struct RenderMessageSegments: View {
                 case .text(let text):
                     MarkdownMessageText(text: text)
                 case .code(let language, let content):
-                    VStack(alignment: .leading, spacing: 6) {
-                        if let language, !language.isEmpty {
-                            Text(language)
-                                .font(.caption2.weight(.semibold))
-                                .foregroundColor(.white.opacity(0.65))
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack {
+                            if let language, !language.isEmpty {
+                                Text(language)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundColor(.white.opacity(0.65))
+                            }
+                            Spacer()
+                            Button {
+                                UIPasteboard.general.string = content
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.white.opacity(0.6))
+                                    .padding(6)
+                                    .background(Color.white.opacity(0.1))
+                                    .clipShape(Circle())
+                            }
                         }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.04))
+
                         ScrollView(.horizontal, showsIndicators: false) {
                             Text(content.trimmingCharacters(in: .newlines))
                                 .font(.system(.body, design: .monospaced))
                                 .foregroundColor(.white.opacity(0.92))
+                                .padding(10)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
-                    .padding(10)
                     .background(Color.white.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                    )
+                case .math(let content, let isBlock):
+                    if isBlock {
+                        MathView(equation: content, isBlock: true)
+                            .frame(minHeight: 60)
+                            .padding(10)
+                            .background(Color.white.opacity(0.05))
+                            .cornerRadius(10)
+                    } else {
+                        MathView(equation: content, isBlock: false)
+                            .frame(width: 100, height: 30) // Inline math is tricky with WebView height
+                    }
+                case .table(let content):
+                    MarkdownTableView(rawTable: content)
                 }
             }
         }
@@ -1797,65 +2048,177 @@ private struct RenderMessageSegments: View {
         for marker in markers {
             value = value.replacingOccurrences(of: marker, with: "")
         }
-
-        // Render block math in a code-style block for readable display.
-        value = value.replacingOccurrences(
-            of: #"\$\$([\s\S]*?)\$\$"#,
-            with: "```math\n$1\n```",
-            options: .regularExpression
-        )
-        // Render inline math as inline code-style segment.
-        value = value.replacingOccurrences(
-            of: #"\$(?!\$)([^\n$]+)\$"#,
-            with: "`$1`",
-            options: .regularExpression
-        )
         return value
     }
 
     private func parseSegments(_ input: String) -> [ParsedSegment] {
-        let pattern = #"```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
-            return [.text(input)]
-        }
+        let codePattern = #"```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```"#
+        let mathBlockPattern = #"\$\$([\s\S]*?)\$\$"#
+        let mathInlinePattern = #"\$(?!\$)([^\n$]+)\$"#
+        let tablePattern = #"(?:\n|^)(\|.*\|[ \t]*\n\|[ \t]*[:-].*\|[ \t]*\n(?:\|.*\|[ \t]*\n?)+)"#
 
-        let nsInput = input as NSString
-        let matches = regex.matches(in: input, options: [], range: NSRange(location: 0, length: nsInput.length))
-        if matches.isEmpty {
-            return [.text(input)]
-        }
+        let patterns = [
+            (codePattern, 0),
+            (mathBlockPattern, 1),
+            (mathInlinePattern, 2),
+            (tablePattern, 3)
+        ]
 
         var segments: [ParsedSegment] = []
         var cursor = 0
+        let nsInput = input as NSString
 
-        for match in matches {
-            if match.range.location > cursor {
-                let textPart = nsInput.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
-                if !textPart.isEmpty {
-                    segments.append(.text(textPart))
+        while cursor < nsInput.length {
+            var bestMatch: (NSTextCheckingResult, Int)? = nil
+
+            for (pattern, id) in patterns {
+                if let regex = try? NSRegularExpression(pattern: pattern, options: []),
+                   let match = regex.firstMatch(in: input, options: [], range: NSRange(location: cursor, length: nsInput.length - cursor)) {
+                    if bestMatch == nil || match.range.location < bestMatch!.0.range.location {
+                        bestMatch = (match, id)
+                    }
                 }
             }
 
-            let language: String? = {
-                let langRange = match.range(at: 1)
-                guard langRange.location != NSNotFound else { return nil }
-                let lang = nsInput.substring(with: langRange).trimmingCharacters(in: .whitespacesAndNewlines)
-                return lang.isEmpty ? nil : lang
-            }()
+            guard let (match, id) = bestMatch else {
+                let remaining = nsInput.substring(from: cursor)
+                if !remaining.isEmpty { segments.append(.text(remaining)) }
+                break
+            }
 
-            let code = nsInput.substring(with: match.range(at: 2))
-            segments.append(.code(language: language, content: code))
+            if match.range.location > cursor {
+                let textPart = nsInput.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+                if !textPart.isEmpty { segments.append(.text(textPart)) }
+            }
+
+            switch id {
+            case 0: // Code
+                let langRange = match.range(at: 1)
+                let language = langRange.location != NSNotFound ? nsInput.substring(with: langRange) : nil
+                let content = nsInput.substring(with: match.range(at: 2))
+                segments.append(.code(language: language, content: content))
+            case 1: // Math Block
+                let content = nsInput.substring(with: match.range(at: 1))
+                segments.append(.math(content: content, isBlock: true))
+            case 2: // Math Inline
+                let content = nsInput.substring(with: match.range(at: 1))
+                segments.append(.math(content: content, isBlock: false))
+            case 3: // Table
+                let content = nsInput.substring(with: match.range(at: 1))
+                segments.append(.table(content))
+            default: break
+            }
+
             cursor = match.range.location + match.range.length
         }
 
-        if cursor < nsInput.length {
-            let trailing = nsInput.substring(from: cursor)
-            if !trailing.isEmpty {
-                segments.append(.text(trailing))
+        return segments.isEmpty ? [.text(input)] : segments
+    }
+}
+
+private struct MathView: UIViewRepresentable {
+    let equation: String
+    let isBlock: Bool
+
+    func makeUIView(context: Context) -> WKWebView {
+        let webView = WKWebView()
+        webView.backgroundColor = .clear
+        webView.isOpaque = false
+        webView.scrollView.isScrollEnabled = false
+        return webView
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        let isDark = true // App is mainly dark
+        let html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+            <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+            <style>
+                body {
+                    margin: 0;
+                    padding: \(isBlock ? "10px" : "2px 4px");
+                    display: flex;
+                    justify-content: \(isBlock ? "center" : "flex-start");
+                    background: transparent;
+                    color: \(isDark ? "white" : "black");
+                    font-family: -apple-system;
+                    font-size: \(isBlock ? "1.1em" : "1.0em");
+                }
+                .katex-display { margin: 0; }
+            </style>
+        </head>
+        <body>
+            <div id="math"></div>
+            <script>
+                try {
+                    katex.render(\(equation.debugDescription), document.getElementById('math'), {
+                        throwOnError: false,
+                        displayMode: \(isBlock ? "true" : "false")
+                    });
+                } catch (e) {
+                    document.getElementById('math').textContent = \(equation.debugDescription);
+                }
+            </script>
+        </body>
+        </html>
+        """
+        uiView.loadHTMLString(html, baseURL: nil)
+    }
+}
+
+private struct MarkdownTableView: View {
+    let rawTable: String
+
+    var body: some View {
+        let rows = parseTable(rawTable)
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(0..<rows.count, id: \.self) { rowIndex in
+                        HStack(spacing: 0) {
+                            ForEach(0..<rows[rowIndex].count, id: \.self) { colIndex in
+                                Text(rows[rowIndex][colIndex])
+                                    .font(rowIndex == 0 ? .body.bold() : .body)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .frame(minWidth: 80, alignment: .leading)
+                                    .background(rowIndex == 0 ? Color.white.opacity(0.12) : Color.clear)
+                                    .border(Color.white.opacity(0.15), width: 0.5)
+                            }
+                        }
+                    }
+                }
             }
         }
+        .background(Color.white.opacity(0.05))
+        .cornerRadius(10)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+        )
+        .padding(.vertical, 4)
+    }
 
-        return segments
+    private func parseTable(_ raw: String) -> [[String]] {
+        let lines = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .newlines)
+        var result: [[String]] = []
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.replacingOccurrences(of: "|", with: "").replacingOccurrences(of: "-", with: "").replacingOccurrences(of: ":", with: "").trimmingCharacters(in: .whitespaces).isEmpty {
+                continue
+            }
+            let components = line.components(separatedBy: "|")
+            let validCells = components.enumerated().filter { (index, _) in
+                index > 0 && index < components.count - 1
+            }.map { $0.element.trimmingCharacters(in: .whitespaces) }
+            if !validCells.isEmpty { result.append(validCells) }
+        }
+        return result
     }
 }
 
@@ -1864,36 +2227,28 @@ private struct MarkdownMessageText: View {
 
     var body: some View {
         let normalizedText = text.replacingOccurrences(of: "\\n", with: "\n")
-        let lines = normalizedText.components(separatedBy: "\n")
-
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { indexedLine in
-                let line = indexedLine.element
-                if line.isEmpty {
-                    Color.clear
-                        .frame(height: 10)
-                } else if let attributed = try? AttributedString(
-                    markdown: line,
-                    options: .init(
-                        interpretedSyntax: .full,
-                        failurePolicy: .returnPartiallyParsedIfPossible
-                    )
-                ) {
-                    Text(attributed)
-                        .font(.body)
-                        .lineSpacing(4)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                } else {
-                    Text(line)
-                        .font(.body)
-                        .lineSpacing(4)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                }
-            }
+        
+        // Use full markdown parsing for each block of text to keep layout consistent
+        if let attributed = try? AttributedString(
+            markdown: normalizedText,
+            options: .init(
+                interpretedSyntax: .full,
+                failurePolicy: .returnPartiallyParsedIfPossible
+            )
+        ) {
+            Text(attributed)
+                .font(.body)
+                .lineSpacing(4)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+        } else {
+            Text(normalizedText)
+                .font(.body)
+                .lineSpacing(4)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
         }
     }
 }
@@ -2059,6 +2414,8 @@ struct ChatScreen: View {
                         Text(vm.selectedModelName)
                             .font(.caption.bold())
                             .foregroundColor(.white)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                         Image(systemName: "chevron.down")
                             .font(.system(size: 8, weight: .bold))
                             .foregroundColor(.white.opacity(0.78))
@@ -2118,11 +2475,14 @@ struct ChatScreen: View {
                                 let canRegenerate = isLatestAssistant && !vm.isGenerating && !msg.isGenerating
                                 let canEditUser = msg.isFromUser && msg.id == vm.latestUserMessageId && !vm.isGenerating
                                 let canEditAssistant = !msg.isFromUser && !vm.isGenerating && !msg.isGenerating
+                                let modelSupportsThinking = chatModel(named: vm.selectedModelName)?.supportsThinking == true
+                                let useStreamingThinkingHeuristic = supportsUnmarkedStreamingThinkingHeuristic(forModelNamed: vm.selectedModelName)
                                 let regenerateAction: (() -> Void)? = canRegenerate ? {
                                     vm.regenerateResponse(for: msg.id)
                                 } : nil
                                 MessageBubble(
                                     message: msg,
+                                    preferThinkingWhileStreaming: modelSupportsThinking && vm.enableThinking && useStreamingThinkingHeuristic,
                                     onCopy: {
                                         vm.copyMessage(msg)
                                         copiedMessageId = msg.id
@@ -2411,6 +2771,7 @@ struct ChatScreen: View {
         }
         .sheet(isPresented: $showSettings) {
              ChatSettingsSheet(vm: vm)
+                .environmentObject(settings)
         }
         .fullScreenCover(isPresented: Binding(
             get: { previewImagePath != nil },
@@ -2432,6 +2793,7 @@ struct ChatScreen: View {
                 onNavigateToModels: onNavigateToModels,
                 onNavigateToSettings: onNavigateToSettings
             )
+            .environmentObject(settings)
         }
         // Audio transcribe importer stays here as the primary chain modifier.
         .fileImporter(
@@ -2635,6 +2997,8 @@ struct ChatScreen: View {
             } else {
                 Text(vm.selectedModelName)
                     .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(Color.white.opacity(0.12))
                     .clipShape(Capsule())

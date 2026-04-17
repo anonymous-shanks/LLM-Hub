@@ -1528,7 +1528,6 @@ class ChatViewModel: ObservableObject {
         let modelName = selectedModelName.lowercased()
         let modelSupportsThinking = chatModel(named: selectedModelName)?.supportsThinking == true
         let isGemma  = modelName.contains("gemma")
-        let isGemma4 = isGemma && (modelName.contains("gemma 4") || modelName.contains("gemma-4"))
         let isLlama  = modelName.contains("llama") || modelName.contains("mistral")
         let isHarmonyModel = modelName.contains("gpt-oss") || modelName.contains("gpt_oss")
 
@@ -1600,9 +1599,7 @@ class ChatViewModel: ObservableObject {
 
         // Optionally inject RAG context or System Message as an opening turn.
         if let rag = ragPrefix, !rag.isEmpty {
-            if isGemma4 {
-                parts.append("<|turn>user\n\(rag)<turn|>\n<|turn>model\nUnderstood.<turn|>")
-            } else if isGemma {
+            if isGemma {
                 parts.append("<start_of_turn>user\n\(rag)<end_of_turn>\n<start_of_turn>model\nUnderstood.<end_of_turn>")
             } else if isLlama {
                 parts.append("[INST] \(rag) [/INST]\nUnderstood.")
@@ -1625,10 +1622,7 @@ class ChatViewModel: ObservableObject {
             }
             guard !content.isEmpty else { continue }
 
-            if isGemma4 {
-                let role = msg.isFromUser ? "user" : "model"
-                parts.append("<|turn>\(role)\n\(content)<turn|>")
-            } else if isGemma {
+            if isGemma {
                 let gemmaRole = msg.isFromUser ? "user" : "model"
                 parts.append("<start_of_turn>\(gemmaRole)\n\(content)<end_of_turn>")
             } else if isLlama {
@@ -1644,10 +1638,7 @@ class ChatViewModel: ObservableObject {
         }
 
         // 4. Append the active new user prompt
-        if isGemma4 {
-            parts.append("<|turn>user\n\(currentUserPrompt)<turn|>")
-            parts.append("<|turn>model\n")
-        } else if isGemma {
+        if isGemma {
             parts.append("<start_of_turn>user\n\(currentUserPrompt)<end_of_turn>")
             parts.append("<start_of_turn>model\n")
         } else if isLlama {

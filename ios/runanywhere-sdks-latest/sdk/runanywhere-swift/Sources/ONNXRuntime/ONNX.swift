@@ -48,7 +48,7 @@ public enum ONNX: RunAnywhereModule {
     public static let version = "2.0.0"
 
     /// ONNX Runtime library version (underlying C library)
-    public static let onnxRuntimeVersion = "1.23.2"
+    public static let onnxRuntimeVersion = "1.20.0"
 
     // MARK: - RunAnywhereModule Conformance
 

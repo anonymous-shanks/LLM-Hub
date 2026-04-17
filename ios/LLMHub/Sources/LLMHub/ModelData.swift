@@ -159,26 +159,90 @@ public struct AIModel: Identifiable, Codable, Sendable {
 }
 
 public struct ModelData {
+    private static let localCompletionThresholdRatio = 0.98
 
-    // Returns catalog models merged with any user-imported custom models from UserDefaults.
-    public static func allModels() -> [AIModel] {
-        var all = models
-        if let data = UserDefaults.standard.data(forKey: "imported_models_ios"),
-           let imported = try? JSONDecoder().decode([AIModel].self, from: data) {
-            for model in imported where !all.contains(where: { $0.id == model.id }) {
-                all.append(fixUpCustomModelPaths(model))
-            }
+    private static func rerootedPath(_ storedPath: String) -> String {
+        guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return storedPath
         }
-        return all
+        if let marker = storedPath.range(of: "/Documents/ImportedModels/") {
+            let relativeSuffix = String(storedPath[marker.upperBound...])
+            return docsDir.appendingPathComponent("ImportedModels").appendingPathComponent(relativeSuffix).path
+        }
+        if let marker = storedPath.range(of: "/Documents/RunAnywhere/") {
+            let relativeSuffix = String(storedPath[marker.upperBound...])
+            return docsDir.appendingPathComponent("RunAnywhere").appendingPathComponent(relativeSuffix).path
+        }
+        return storedPath
     }
 
-    /// iOS may relocate the app container between launches, changing the UUID in
-    /// absolute paths. Re-root stored paths to the current Documents directory so
-    /// imported models survive across restarts.
-    private static func fixUpCustomModelPaths(_ model: AIModel) -> AIModel {
+    private static func ggufFiles(in directory: URL) -> [URL] {
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        return contents
+            .filter { $0.pathExtension.lowercased() == "gguf" }
+            .sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
+    }
+
+    private static func localFileStatus(in directory: URL, for model: AIModel) -> (allExist: Bool, totalBytes: Int64) {
+        if model.isCoreMLImageGeneration {
+            let sentinel = directory.appendingPathComponent("_downloaded")
+            let exists = FileManager.default.fileExists(atPath: sentinel.path)
+            return (exists, exists ? model.sizeBytes : 0)
+        }
+
+        guard !model.requiredFileNames.isEmpty else {
+            return (false, 0)
+        }
+
+        var totalBytes: Int64 = 0
+        for fileName in model.requiredFileNames {
+            let fileURL = directory.appendingPathComponent(fileName)
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                return (false, totalBytes)
+            }
+            let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int64) ?? 0
+            totalBytes += size
+        }
+
+        return (true, totalBytes)
+    }
+
+    public static func normalizeCustomModel(_ model: AIModel) -> AIModel {
         guard model.source == "Custom" else { return model }
-        let fixedURL = rerootedPath(model.url)
-        let fixedAdditional = model.additionalFiles.map { rerootedPath($0) }
+
+        var fixedURL = rerootedPath(model.url)
+        var fixedAdditional = model.additionalFiles.map(rerootedPath)
+        let modelDirectory = URL(fileURLWithPath: fixedURL).deletingLastPathComponent()
+        let ggufFilesInDirectory = ggufFiles(in: modelDirectory)
+
+        if fixedURL.lowercased().contains("mmproj"),
+           let mainModel = ggufFilesInDirectory.first(where: { !$0.lastPathComponent.lowercased().contains("mmproj") }) {
+            if !fixedAdditional.contains(fixedURL) {
+                fixedAdditional.append(fixedURL)
+            }
+            fixedURL = mainModel.path
+        }
+
+        if model.supportsVision,
+           !fixedAdditional.contains(where: { $0.lowercased().contains("mmproj") && FileManager.default.fileExists(atPath: $0) }),
+           let projector = ggufFilesInDirectory.first(where: { $0.lastPathComponent.lowercased().contains("mmproj") }) {
+            fixedAdditional.append(projector.path)
+        }
+
+        var seen = Set<String>()
+        fixedAdditional = fixedAdditional.filter { path in
+            guard path != fixedURL else { return false }
+            let inserted = seen.insert(path).inserted
+            return inserted
+        }
+
         guard fixedURL != model.url || fixedAdditional != model.additionalFiles else { return model }
         return AIModel(
             id: model.id, name: model.name, description: model.description,
@@ -191,17 +255,63 @@ public struct ModelData {
         )
     }
 
-    private static func rerootedPath(_ storedPath: String) -> String {
-        guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return storedPath }
-        if let marker = storedPath.range(of: "/Documents/ImportedModels/") {
-            let relativeSuffix = String(storedPath[marker.upperBound...])
-            return docsDir.appendingPathComponent("ImportedModels").appendingPathComponent(relativeSuffix).path
+    public static func isModelFullyAvailableLocally(_ model: AIModel) -> Bool {
+        if model.source == "Custom" {
+            let normalized = normalizeCustomModel(model)
+            guard FileManager.default.fileExists(atPath: normalized.url),
+                  !normalized.url.lowercased().contains("mmproj") else {
+                return false
+            }
+            if normalized.supportsVision {
+                return normalized.additionalFiles.contains {
+                    let lower = $0.lowercased()
+                    return lower.contains("mmproj") && FileManager.default.fileExists(atPath: $0)
+                }
+            }
+            return true
         }
-        if let marker = storedPath.range(of: "/Documents/RunAnywhere/") {
-            let relativeSuffix = String(storedPath[marker.upperBound...])
-            return docsDir.appendingPathComponent("RunAnywhere").appendingPathComponent(relativeSuffix).path
+
+        if let runAnywhereDir = try? SimplifiedFileManager.shared.getModelFolderURL(
+            modelId: model.id,
+            framework: model.inferenceFramework
+        ), FileManager.default.fileExists(atPath: runAnywhereDir.path) {
+            let status = localFileStatus(in: runAnywhereDir, for: model)
+            let minimumExpectedBytes = Int64(Double(model.sizeBytes) * localCompletionThresholdRatio)
+            if status.allExist && (minimumExpectedBytes <= 0 || status.totalBytes >= minimumExpectedBytes) {
+                return true
+            }
         }
-        return storedPath
+
+        guard let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return false
+        }
+        let legacyDir = documentsDir.appendingPathComponent("models").appendingPathComponent(model.id)
+        guard FileManager.default.fileExists(atPath: legacyDir.path) else {
+            return false
+        }
+
+        let status = localFileStatus(in: legacyDir, for: model)
+        let minimumExpectedBytes = Int64(Double(model.sizeBytes) * localCompletionThresholdRatio)
+        return status.allExist && (minimumExpectedBytes <= 0 || status.totalBytes >= minimumExpectedBytes)
+    }
+
+    // Returns catalog models merged with any user-imported custom models from UserDefaults.
+    public static func allModels() -> [AIModel] {
+        var all = models
+        if let data = UserDefaults.standard.data(forKey: "imported_models_ios"),
+           let imported = try? JSONDecoder().decode([AIModel].self, from: data) {
+            for model in imported where !all.contains(where: { $0.id == model.id }) {
+                all.append(normalizeCustomModel(model))
+            }
+        }
+        return all
+    }
+
+    /// iOS may relocate the app container between launches, changing the UUID in
+    /// absolute paths. Re-root stored paths to the current Documents directory so
+    /// imported models survive across restarts.
+    private static func fixUpCustomModelPaths(_ model: AIModel) -> AIModel {
+        normalizeCustomModel(model)
     }
 
 // AUTO-GENERATED from android ModelData.kt: GGUF + ONNX models only

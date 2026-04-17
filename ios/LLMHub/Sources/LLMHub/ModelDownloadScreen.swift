@@ -206,7 +206,7 @@ class ModelDownloadViewModel: ObservableObject {
         var needsResave = false
         for raw in imported {
             guard !models.contains(where: { $0.id == raw.id }) else { continue }
-            let model = Self.migrateCustomModelIntoRunAnywhere(Self.rerootCustomPaths(raw))
+            let model = Self.migrateCustomModelIntoRunAnywhere(ModelData.normalizeCustomModel(raw))
             if model.url != raw.url || model.additionalFiles != raw.additionalFiles { needsResave = true }
             models.append(model)
             downloadStates[model.id] = .downloaded
@@ -1116,7 +1116,9 @@ struct ImportExternalModelSheet: View {
     }
 
     private var canImport: Bool {
-        !modelName.trimmingCharacters(in: .whitespaces).isEmpty && selectedFileURL != nil
+        !modelName.trimmingCharacters(in: .whitespaces).isEmpty
+            && selectedFileURL != nil
+            && (!supportsVision || projectorFileURL != nil)
     }
 
     private func handleFileSelected(result: Result<[URL], Error>) {
@@ -1127,6 +1129,13 @@ struct ImportExternalModelSheet: View {
             guard ext == "gguf" else {
                 showError = true
                 errorMessage = settings.localized("unsupported_file_format")
+                return
+            }
+            if url.lastPathComponent.lowercased().contains("mmproj") {
+                showError = true
+                errorMessage = "Select the main GGUF model file here, not the mmproj vision projector."
+                selectedFileURL = nil
+                selectedFileName = ""
                 return
             }
             selectedFileURL = url
@@ -1142,9 +1151,22 @@ struct ImportExternalModelSheet: View {
         switch result {
         case .success(let urls):
             guard let url = urls.first else { return }
+            guard url.pathExtension.lowercased() == "gguf" else {
+                showError = true
+                errorMessage = settings.localized("unsupported_file_format")
+                return
+            }
+            guard url.lastPathComponent.lowercased().contains("mmproj") else {
+                showError = true
+                errorMessage = "Select the mmproj GGUF file as the vision projector."
+                projectorFileURL = nil
+                projectorFileName = ""
+                return
+            }
             projectorFileURL = url
             let name = url.lastPathComponent
             projectorFileName = name.count > 40 ? String(name.prefix(37)) + "..." : name
+            showError = false
         case .failure:
             break
         }

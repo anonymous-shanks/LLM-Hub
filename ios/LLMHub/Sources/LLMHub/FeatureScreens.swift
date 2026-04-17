@@ -301,24 +301,8 @@ private func downloadableFeatureModels() -> [AIModel] {
         if model.isDependencyOnly { return false }
         if model.category == .embedding || model.category == .imageGeneration { return false }
 
-        if model.source == "Custom" {
-            return FileManager.default.fileExists(atPath: model.url)
-        }
-
-        if let runAnywhereDir = try? SimplifiedFileManager.shared.getModelFolderURL(
-            modelId: model.id,
-            framework: model.inferenceFramework
-        ),
-           FileManager.default.fileExists(atPath: runAnywhereDir.path),
-           requiredFilesExist(in: runAnywhereDir, for: model) {
-            return true
-        }
-
-        guard let legacyModelsDir else { return false }
-        let legacyModelDir = legacyModelsDir.appendingPathComponent(model.id)
-        guard FileManager.default.fileExists(atPath: legacyModelDir.path) else { return false }
-
-        return requiredFilesExist(in: legacyModelDir, for: model)
+        guard ModelData.isModelFullyAvailableLocally(model) else { return false }
+        return true
     }
 
     if let appleModel = appleFoundationModelIfAvailable(),

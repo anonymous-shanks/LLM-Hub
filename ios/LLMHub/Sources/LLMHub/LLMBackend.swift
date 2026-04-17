@@ -383,6 +383,14 @@ class LLMBackend: ObservableObject {
     private func resolveModelGGUFPath(for model: AIModel) throws -> String {
         // Custom imported models store the GGUF path directly in model.url.
         if model.source == "Custom" {
+            // Safety: if model.url somehow points to an mmproj file, find the real main model
+            // in the same directory instead (mmproj/CLIP files can't be loaded as main models).
+            if model.url.lowercased().contains("mmproj") {
+                let directory = URL(fileURLWithPath: model.url).deletingLastPathComponent()
+                if let mainModel = listGGUFFiles(in: directory).first(where: { !$0.lastPathComponent.lowercased().contains("mmproj") }) {
+                    return mainModel.path
+                }
+            }
             guard FileManager.default.fileExists(atPath: model.url) else {
                 throw NSError(domain: "LLMBackend", code: -101, userInfo: [NSLocalizedDescriptionKey: "Custom model file missing: \(model.url)"])
             }
@@ -757,7 +765,7 @@ class LLMBackend: ObservableObject {
             // auto-detecting a larger value (e.g. 4096) which causes OOM on <8 GB devices.
             if model.source == "Custom",
                let folderURL = runAnywhereModelDirectory(for: model),
-               let ggufFile = listGGUFFiles(in: folderURL).first {
+               let ggufFile = listGGUFFiles(in: folderURL).first(where: { !$0.lastPathComponent.lowercased().contains("mmproj") }) {
                 let ggufURL = ggufFile
                 let registeredModelInfo = ModelInfo(
                     id: runAnywhereModelId,

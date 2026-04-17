@@ -184,13 +184,18 @@ extension RunAnywhere {
             framework: model.framework,
             format: model.format
         )
+        let expectedIsProjector = expectedPath.lastPathComponent.lowercased().contains("mmproj")
 
         logger.debug("Expected model path: \(expectedPath.lastPathComponent)")
 
-        // If expected path exists, use it
-        if FileManager.default.fileExists(atPath: expectedPath.path) {
+        // If expected path exists and is not a projector file, use it.
+        if FileManager.default.fileExists(atPath: expectedPath.path), !expectedIsProjector {
             logger.info("Found model at expected path: \(expectedPath.lastPathComponent)")
             return expectedPath
+        }
+
+        if expectedIsProjector {
+            logger.warning("Expected path points to mmproj projector; searching for the primary GGUF instead")
         }
 
         // Find files with the expected extension in model folder
@@ -230,13 +235,30 @@ extension RunAnywhere {
             let ext = url.pathExtension.lowercased()
             return extensions.contains(ext)
         }
+
+        let sortedModelFiles = modelFiles.sorted {
+            $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending
+        }
+
+        let nonProjectorFiles = sortedModelFiles.filter {
+            !$0.lastPathComponent.lowercased().contains("mmproj")
+        }
         
-        // Prefer .gguf files if multiple matches
-        if let ggufFile = modelFiles.first(where: { $0.pathExtension.lowercased() == "gguf" }) {
+        // Prefer non-projector .gguf files if multiple matches.
+        if let ggufFile = nonProjectorFiles.first(where: { $0.pathExtension.lowercased() == "gguf" }) {
+            return ggufFile
+        }
+
+        if let file = nonProjectorFiles.first {
+            return file
+        }
+
+        // As a last resort, fall back to any GGUF if the directory only contains projector-like names.
+        if let ggufFile = sortedModelFiles.first(where: { $0.pathExtension.lowercased() == "gguf" }) {
             return ggufFile
         }
         
-        return modelFiles.first
+        return sortedModelFiles.first
     }
 
     /// Unload the currently loaded LLM model

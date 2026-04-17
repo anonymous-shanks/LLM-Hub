@@ -205,7 +205,7 @@ private struct EmbeddingModelSelectorRow: View {
     private var downloadedEmbeddingModels: [AIModel] {
         ModelData.allModels().filter { model in
             model.category == .embedding
-                && RunAnywhere.isModelDownloaded(model.id, framework: model.inferenceFramework)
+                && ModelData.isModelFullyAvailableLocally(model)
         }
     }
 

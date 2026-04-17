@@ -258,23 +258,8 @@ struct ChatSettingsSheet: View {
             if model.name.hasPrefix("Translate Gemma") { return false }
             if model.category == .embedding || model.category == .imageGeneration { return false }
 
-            if model.source == "Custom" {
-                return FileManager.default.fileExists(atPath: model.url)
-            }
-
-            if RunAnywhere.isModelDownloaded(model.id, framework: model.inferenceFramework) {
-                return true
-            }
-
-            guard let legacyModelsDir else { return false }
-            let legacyModelDir = legacyModelsDir.appendingPathComponent(model.id)
-            guard FileManager.default.fileExists(atPath: legacyModelDir.path) else { return false }
-            guard !model.requiredFileNames.isEmpty else { return false }
-
-            return model.requiredFileNames.allSatisfy { fileName in
-                let fileURL = legacyModelDir.appendingPathComponent(fileName)
-                return FileManager.default.fileExists(atPath: fileURL.path)
-            }
+            guard ModelData.isModelFullyAvailableLocally(model) else { return false }
+            return true
         }
 
         if let appleModel = appleFoundationModelIfAvailable(),

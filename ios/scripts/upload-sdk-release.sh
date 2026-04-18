@@ -8,7 +8,7 @@
 #
 # WHAT IT DOES:
 #   1. Zips the built XCFrameworks from runanywhere-sdks-latest/sdk/runanywhere-commons/dist/
-#   2. Creates or updates the GitHub Release on timmyy123/LLM-Hub tagged ios-sdk-v0.19.7-patched-v2
+#   2. Creates or updates the GitHub Release on timmyy123/LLM-Hub tagged ios-sdk-v0.19.7-patched-v5
 #   3. Uploads both ZIPs + checksums.txt as release assets
 #   4. Prints the SHA-256 checksums so you can update Package.swift
 #
@@ -26,16 +26,36 @@ COMMONS_DIR="${REPO_ROOT}/ios/runanywhere-sdks-latest/sdk/runanywhere-commons"
 DIST_DIR="${COMMONS_DIR}/dist"
 
 # Config
-GITHUB_TOKEN="${1:-}"
+GITHUB_TOKEN=""
+RELEASE_TAG_OVERRIDE=""
+
+# Parse arguments: named flags or positional token
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --tag) RELEASE_TAG_OVERRIDE="$2"; shift 2 ;;
+        --notes) shift 2 ;;  # ignore, use default
+        --*) shift 2 ;;
+        *) GITHUB_TOKEN="$1"; shift ;;
+    esac
+done
+
+# Keychain fallback if no token provided
+if [[ -z "$GITHUB_TOKEN" ]]; then
+    GITHUB_TOKEN=$(security find-generic-password -s "GitHub - https://api.github.com" -w 2>/dev/null || \
+                   security find-generic-password -s "github-token" -w 2>/dev/null || \
+                   security find-internet-password -s "github.com" -w 2>/dev/null || true)
+fi
+
 REPO="timmyy123/LLM-Hub"
 SDK_VERSION="0.19.7"
-RELEASE_TAG="ios-sdk-v${SDK_VERSION}-patched-v2"
-RELEASE_TITLE="iOS SDK v${SDK_VERSION} (patched v2)"
+RELEASE_TAG="${RELEASE_TAG_OVERRIDE:-ios-sdk-v${SDK_VERSION}-patched-v5}"
+RELEASE_TITLE="iOS SDK v${SDK_VERSION} (patched v5)"
 RELEASE_NOTES="Patched RunAnywhere SDK v${SDK_VERSION}:
 - MAX_BATCH_SIZE = 2048 (was 4096) — fixes OOM on Gemma 4B (Q2_K) / 3.9B models
 - MAX_UBATCH_SIZE = 512
 - n_ctx still 4096, but Metal allocates ~2049 MiB instead of 4097 MiB
 - Gemma 4 VLM prompt and stop-token fixes
+- context_length from model registry now forwarded to rac_llm_llamacpp_create (fixes n_ctx=1024 bug)
 - Built from ios/runanywhere-sdks-latest local source
 
 To use, set ios/runanywhere-sdks-latest/Package.swift useLocalBinaries = false

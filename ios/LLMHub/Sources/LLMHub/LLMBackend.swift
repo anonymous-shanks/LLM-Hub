@@ -888,7 +888,11 @@ class LLMBackend: ObservableObject {
         }
 
         let effectiveSystemPrompt: String?
-        if isHarmonyModel && !prompt.hasPrefix("__RAW_PROMPT__") {
+        if prompt.hasPrefix("__RAW_PROMPT__") {
+            // System prompt is already embedded in the formatted multi-turn prompt — don't pass it
+            // again via options or the SDK will prepend it a second time, breaking conversation history.
+            effectiveSystemPrompt = nil
+        } else if isHarmonyModel {
             effectiveSystemPrompt = nil
         } else {
             effectiveSystemPrompt = systemPrompt
@@ -935,17 +939,44 @@ class LLMBackend: ObservableObject {
             let result = try await RunAnywhere.generate(usePrompt, options: options)
             let fullText = result.text
 
-            var currentOutput = ""
-            let tokens = fullText.split(separator: " ", omittingEmptySubsequences: false)
-            for (index, token) in tokens.enumerated() {
-                if index > 0 { currentOutput += " " }
-                currentOutput += String(token)
-                onUpdate(currentOutput, result.tokensUsed, result.tokensPerSecond)
-                try? await Task.sleep(nanoseconds: 10_000_000) // 10ms for smoother perception
-            }
+            // If the SDK provides separate thinking content, wrap it in sentinels so the
+            // thinking drawer shows the real reasoning and the answer streams below it —
+            // matching the same overlay path used for other models.
+            let sdkThinking = result.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let answerText = fullText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let hasSdkThinking = !sdkThinking.isEmpty || (result.thinkingTokens ?? 0) > 0
 
-            if currentOutput.isEmpty {
-                onUpdate(fullText, result.tokensUsed, result.tokensPerSecond)
+            if hasSdkThinking {
+                // First, surface the thinking content immediately so the drawer opens.
+                let thinkingDisplay = Self.thinkingSentinelOpen + sdkThinking + Self.thinkingSentinelClose
+                onUpdate(thinkingDisplay, 0, 0)
+
+                // Then stream the answer word-by-word after the thinking sentinels.
+                var currentOutput = thinkingDisplay
+                let answerTokens = answerText.split(separator: " ", omittingEmptySubsequences: false)
+                for (index, token) in answerTokens.enumerated() {
+                    if index > 0 { currentOutput += " " }
+                    currentOutput += String(token)
+                    onUpdate(currentOutput, 0, 0)
+                    try? await Task.sleep(nanoseconds: 10_000_000) // 10ms for smoother perception
+                }
+
+                let finalDisplay = currentOutput.isEmpty ? thinkingDisplay : currentOutput
+                onUpdate(finalDisplay, result.responseTokens ?? result.tokensUsed, result.tokensPerSecond)
+            } else {
+                // No thinking content — stream the answer directly (heuristic drawer handled by UI).
+                var currentOutput = ""
+                let tokens = fullText.split(separator: " ", omittingEmptySubsequences: false)
+                for (index, token) in tokens.enumerated() {
+                    if index > 0 { currentOutput += " " }
+                    currentOutput += String(token)
+                    onUpdate(currentOutput, result.tokensUsed, result.tokensPerSecond)
+                    try? await Task.sleep(nanoseconds: 10_000_000) // 10ms for smoother perception
+                }
+
+                if currentOutput.isEmpty {
+                    onUpdate(fullText, result.tokensUsed, result.tokensPerSecond)
+                }
             }
             return
         }
@@ -1051,6 +1082,11 @@ class LLMBackend: ObservableObject {
         for try await token in streamResult.stream {
             chunkCount += 1
             currentOutput += token
+            // Strip <unusedN> thinking tokens (Gemma 4 emits these when thinking mode activates)
+            if currentOutput.contains("<unused") {
+                currentOutput = currentOutput.replacingOccurrences(
+                    of: #"<unused\d+>"#, with: "", options: .regularExpression)
+            }
             let normalizedOutput = isHarmonyModel ? Self.normalizeHarmonyOutput(currentOutput) : (currentOutput, false)
 
             if chunkCount == 1 {
@@ -1079,6 +1115,15 @@ class LLMBackend: ObservableObject {
         }
 
         let result = try await streamResult.result.value
+        // Strip trailing Gemma stop tokens that leak through when generation ends on EOG
+        let gemmaTrailingTokens = ["<end_of_turn>", "</s>", "<eos>"]
+        for tok in gemmaTrailingTokens {
+            if currentOutput.hasSuffix(tok) {
+                currentOutput = String(currentOutput.dropLast(tok.count))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                break
+            }
+        }
         let normalizedFinalOutput = isHarmonyModel ? Self.normalizeHarmonyOutput(currentOutput) : (currentOutput, false)
         let sdkThinking = result.thinkingContent?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) ?? ""
         let sdkHasThinking = !sdkThinking.isEmpty || (result.thinkingTokens ?? 0) > 0

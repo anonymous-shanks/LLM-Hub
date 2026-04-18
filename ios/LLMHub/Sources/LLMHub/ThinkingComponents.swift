@@ -100,6 +100,13 @@ func supportsUnmarkedStreamingThinkingHeuristic(forModelNamed modelName: String?
         return false
     }
 
+    // Apple Foundation Model provides thinking content via SDK result.thinkingContent;
+    // the backend wraps it in sentinels directly. The fallback heuristic would incorrectly
+    // show the answer words as thinking before the sentinels arrive.
+    if normalizedName.contains("apple foundation model") {
+        return false
+    }
+
     return true
 }
 

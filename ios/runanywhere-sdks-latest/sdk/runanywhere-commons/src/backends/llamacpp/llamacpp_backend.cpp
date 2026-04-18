@@ -383,33 +383,17 @@ bool LlamaCppTextGeneration::load_model(const std::string& model_path,
              "GPU layer limiting may be conservative.", params_billions);
     }
 
-    // Adaptive context size based on model size for mobile devices
-    int adaptive_max_context;
-    if (params_billions >= 7.0) {
-        // 7B+ models: use 2048 context to fit in ~6GB GPU memory
-        adaptive_max_context = 2048;
-        LOGI("Large model detected (%.1fB params), limiting context to %d for memory", params_billions, adaptive_max_context);
-    } else if (params_billions >= 3.0) {
-        // 3-7B models: use 4096 context
-        adaptive_max_context = 4096;
-        LOGI("Medium model detected (%.1fB params), limiting context to %d", params_billions, adaptive_max_context);
-    } else if (params_billions >= 1.0) {
-        // 1-3B models: use 2048 context (higher values OOM on mobile, especially with LoRA)
-        adaptive_max_context = 2048;
-        LOGI("Small-medium model detected (%.1fB params), limiting context to %d", params_billions, adaptive_max_context);
-    } else {
-        // Tiny models (<1B): can use larger context
-        adaptive_max_context = max_default_context_;
-    }
+    // Adaptive context size: only used when user has NOT specified a context size.
+    // When user_context_size > 0, we use exactly that (capped by model_train_ctx).
 
     if (user_context_size > 0) {
         context_size_ = std::min(user_context_size, model_train_ctx);
         LOGI("Using user-provided context size: %d (requested: %d, model max: %d)", context_size_,
              user_context_size, model_train_ctx);
     } else {
-        context_size_ = std::min({model_train_ctx, max_default_context_, adaptive_max_context});
-        LOGI("Auto-detected context size: %d (model: %d, cap: %d, adaptive: %d)", context_size_,
-             model_train_ctx, max_default_context_, adaptive_max_context);
+        context_size_ = std::min(model_train_ctx, max_default_context_);
+        LOGI("Auto-detected context size: %d (model: %d, cap: %d)", context_size_,
+             model_train_ctx, max_default_context_);
     }
 
     // Cap batch sizes to avoid exceeding Metal's 4 GB single-buffer limit on iOS.

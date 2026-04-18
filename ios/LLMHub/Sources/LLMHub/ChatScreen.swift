@@ -1890,10 +1890,10 @@ struct MessageBubble: View {
                         let answer = hasMarkers ? getDisplayContentWithoutThinking(message.content) : message.content
                         if !hasMarkers || !answer.isEmpty {
                             Spacer()
-                            let thinkingChars = parseThinkingAndAnswer(message.content).thinking.count
-                            let thinkingTokenEst = max(0, thinkingChars / 4)
-                            let answerTokenCount = max(1, tokenCount - thinkingTokenEst)
-                            Label(String(format: settings.localized("tokens_per_second_format"), answerTokenCount, tps), systemImage: "bolt.fill")
+                            // The backend already provides responseTokens (answer-only count)
+                            // via result.responseTokens in the final callback, so tokenCount
+                            // is already the answer token count — no need to subtract an estimate.
+                            Label(String(format: settings.localized("tokens_per_second_format"), tokenCount, tps), systemImage: "bolt.fill")
                                 .font(.caption2)
                                 .foregroundColor(.white.opacity(0.63))
                         }

@@ -27,6 +27,7 @@
 		AFCC035B534D28D50731B66D /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A69D8D4DF513F8D642F73064 /* Localizable.strings */; };
 		B0DC2F58405BDC55315A8099 /* ModelDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05BF91E2CF47146ED081A0A8 /* ModelDownloader.swift */; };
 		B1C4A2D3F5E6789012345678 /* RunAnywhereONNX in Frameworks */ = {isa = PBXBuildFile; productRef = B1C4A2D4F5E6789012345678 /* RunAnywhereONNX */; };
+		5A9D0089FE08164E4232AD63 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 368DEEF34DE54ABD87FE0EF3 /* Assets.xcassets */; };
 		BB0639256B9F424CC61F2737 /* Icon.png in Resources */ = {isa = PBXBuildFile; fileRef = F841EEA264BDE0E6E2A1BC18 /* Icon.png */; };
 		BBEFB76ECA4FB739E947BF5D /* LLMHubApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8576188C8596440A08A0B171 /* LLMHubApp.swift */; };
 		CB4333B9DD904E3DBB3184F9 /* MemoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27AC91B048B74436A4029665 /* MemoryStore.swift */; };
@@ -81,6 +82,7 @@
 		E7D017ED03C80DCB4E040377 /* pl */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pl; path = pl.lproj/Localizable.strings; sourceTree = "<group>"; };
 		ECD7AAE029AF6E8F7EA01B3D /* LLMBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMBackend.swift; sourceTree = "<group>"; };
 		F5C1B532F7D3AE6F20EB4AEC /* he */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = he; path = he.lproj/Localizable.strings; sourceTree = "<group>"; };
+		368DEEF34DE54ABD87FE0EF3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F841EEA264BDE0E6E2A1BC18 /* Icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Icon.png; sourceTree = "<group>"; };
 		FA001122334455667788AACC /* StableDiffusionBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StableDiffusionBackend.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F600002A2B3C4D /* ThinkingComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingComponents.swift; sourceTree = "<group>"; };
@@ -127,6 +129,7 @@
 				4F7A456876803C1FBBE0A211 /* ContentView.swift */,
 				B2A92FE9D6B44A3156E987C2 /* FeatureScreens.swift */,
 				A6D5DEA8384F9DDFC69C359C /* HomeScreen.swift */,
+				368DEEF34DE54ABD87FE0EF3 /* Assets.xcassets */,
 				F841EEA264BDE0E6E2A1BC18 /* Icon.png */,
 				ECD7AAE029AF6E8F7EA01B3D /* LLMBackend.swift */,
 				8576188C8596440A08A0B171 /* LLMHubApp.swift */,
@@ -245,6 +248,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5A9D0089FE08164E4232AD63 /* Assets.xcassets in Resources */,
 				BB0639256B9F424CC61F2737 /* Icon.png in Resources */,
 				AFCC035B534D28D50731B66D /* Localizable.strings in Resources */,
 			);
